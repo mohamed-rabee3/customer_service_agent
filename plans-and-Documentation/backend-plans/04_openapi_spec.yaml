@@ -1,0 +1,1763 @@
+openapi: 3.0.3
+info:
+  title: Customer Service AI Agents Platform API
+  description: |
+    REST API for managing AI-powered customer service agents with voice and chat capabilities.
+    
+    **Key Features:**
+    - Admin and supervisor management
+    - AI agent configuration
+    - Real-time call/chat monitoring
+    - Analytics and KPIs
+    - Tool permission management
+    
+    **Authentication:**
+    All endpoints require JWT authentication via Supabase Auth.
+    Include token in Authorization header: `Bearer <token>`
+    
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: https://api.example.com/v1
+    description: Production server
+  - url: http://localhost:8000/v1
+    description: Development server
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Auth
+    description: Authentication endpoints
+  - name: Admin
+    description: Admin-only endpoints
+  - name: Supervisors
+    description: Supervisor management
+  - name: Agents
+    description: AI agent configuration
+  - name: Interactions
+    description: Call/chat interactions
+  - name: Archives
+    description: Call/chat history
+  - name: Analytics
+    description: KPIs and statistics
+  - name: Realtime
+    description: SSE real-time updates
+  - name: Tools
+    description: Tool permission management
+
+# ============================================================
+# IMPORTANT NOTES ON INTERNAL APIs
+# ============================================================
+# The following interactions are NOT exposed as REST endpoints
+# but handled internally between LiveKit Agents and FastAPI:
+#
+# 1. Agent requesting tool permissions:
+#    - Agent → Backend (internal webhook/callback)
+#    - Not exposed in REST API
+#    - Triggers notification to supervisor via SSE
+#
+# 2. Agent status updates:
+#    - Agent → Backend (via LiveKit room events)
+#    - Status changes: idle → in_call → paused → in_call → idle
+#    - Updates reflected in database
+#    - Supervisor sees updates via SSE
+#
+# 3. Real-time metrics generation:
+#    - Agent → Backend (internal processing)
+#    - Sentiment, satisfaction, feed calculated every 5 seconds
+#    - Pushed to supervisor via SSE
+#    - Stored in realtime_metrics table
+#
+# 4. Whisper pause/resume signals:
+#    - Backend → LiveKit Agent (via room data messages)
+#    - Not direct HTTP API call
+#    - Agent receives signal and pauses/resumes
+#
+# 5. Phone number collection:
+#    - Agent asks customer for phone number during call
+#    - Agent → Backend (internal API call)
+#    - Updates interaction record
+# ============================================================
+
+paths:
+  # ============ AUTH ENDPOINTS ============
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user
+      description: Retrieve authenticated user information
+      responses:
+        '200':
+          description: Current user data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+
+
+  # ============ ADMIN ENDPOINTS ============
+  /admin/dashboard:
+    get:
+      tags: [Admin]
+      summary: Get admin dashboard data
+      description: Retrieve active supervisors and leaderboard
+      parameters:
+        - name: limit
+          in: query
+          description: Max supervisors to show (max 15)
+          schema:
+            type: integer
+            default: 15
+            maximum: 15
+      responses:
+        '200':
+          description: Dashboard data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active_supervisors:
+                    type: array
+                    maxItems: 15
+                    items:
+                      $ref: '#/components/schemas/SupervisorCard'
+                  leaderboard:
+                    type: array
+                    minItems: 0
+                    maxItems: 5
+                    description: Top 5 supervisors based on monthly performance
+                    items:
+                      $ref: '#/components/schemas/LeaderboardEntry'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/analytics:
+    get:
+      tags: [Admin, Analytics]
+      summary: System-wide analytics
+      description: Get KPIs for all supervisors
+      parameters:
+        - name: agent_type
+          in: query
+          description: Filter by agent type
+          schema:
+            type: string
+            enum: [voice, chat]
+      responses:
+        '200':
+          description: Analytics data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemAnalytics'
+
+  # ============ SUPERVISOR ENDPOINTS ============
+  /supervisors:
+    get:
+      tags: [Supervisors]
+      summary: List all supervisors
+      description: Get all supervisors (admin only)
+      parameters:
+        - name: supervisor_type
+          in: query
+          schema:
+            type: string
+            enum: [voice, chat]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: List of supervisors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  supervisors:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Supervisor'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+
+    post:
+      tags: [Supervisors]
+      summary: Create supervisor
+      description: Create new supervisor account (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSupervisorRequest'
+      responses:
+        '201':
+          description: Supervisor created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Supervisor'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /supervisors/{supervisor_id}:
+    get:
+      tags: [Supervisors]
+      summary: Get supervisor details
+      parameters:
+        - $ref: '#/components/parameters/SupervisorId'
+      responses:
+        '200':
+          description: Supervisor details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupervisorDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Supervisors]
+      summary: Update supervisor
+      description: Update supervisor information (admin only)
+      parameters:
+        - $ref: '#/components/parameters/SupervisorId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSupervisorRequest'
+      responses:
+        '200':
+          description: Supervisor updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Supervisor'
+
+    delete:
+      tags: [Supervisors]
+      summary: Delete supervisor
+      description: Delete supervisor and all associated data (admin only)
+      parameters:
+        - $ref: '#/components/parameters/SupervisorId'
+      responses:
+        '204':
+          description: Supervisor deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /supervisors/me/dashboard:
+    get:
+      tags: [Supervisors]
+      summary: Get supervisor dashboard data
+      description: |
+        Returns all agents for the current supervisor with their current status, 
+        active interactions, and latest real-time metrics. Optimized for dashboard 
+        rendering with all necessary data in a single response.
+        
+        **Response includes:**
+        - All agents (max 3) for current supervisor
+        - Current interaction details (if agent is active)
+        - Latest real-time metrics (sentiment, satisfaction, feed)
+        - Agent status and basic info
+        
+        **Note:** Real-time updates are still available via SSE endpoint 
+        `/realtime/agent/{agent_id}/metrics` for live updates during active interactions.
+      responses:
+        '200':
+          description: Dashboard data with all agents and their current state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agents:
+                    type: array
+                    maxItems: 3
+                    description: All agents for current supervisor with dashboard data
+                    items:
+                      $ref: '#/components/schemas/AgentDashboardCard'
+                  total:
+                    type: integer
+                    description: Total number of agents for supervisor
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ============ AGENT ENDPOINTS ============
+  /agents:
+    post:
+      tags: [Agents]
+      summary: Create agent
+      description: Create new AI agent (max 3 per supervisor)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentRequest'
+      responses:
+        '201':
+          description: Agent created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          description: Maximum agent limit reached
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Maximum 3 agents allowed per supervisor"
+
+  /agents/{agent_id}:
+    get:
+      tags: [Agents]
+      summary: Get agent details
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '200':
+          description: Agent details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentDetail'
+
+    put:
+      tags: [Agents]
+      summary: Update agent
+      description: Update agent configuration (only when agent is idle)
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAgentRequest'
+      responses:
+        '200':
+          description: Agent updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '409':
+          description: Agent not idle
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Cannot update agent while in active call/chat"
+
+    delete:
+      tags: [Agents]
+      summary: Delete agent
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '204':
+          description: Agent deleted
+
+  /agents/{agent_id}/status:
+    get:
+      tags: [Agents]
+      summary: Get agent current status
+      description: Real-time agent status and current interaction
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '200':
+          description: Agent status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentStatus'
+
+  /agents/{agent_id}/whisper:
+    post:
+      tags: [Agents]
+      summary: Send whisper instructions to agent
+      description: |
+        Inject instructions to agent during active interaction.
+        
+        **Flow for Voice Agents:**
+        1. Supervisor clicks whisper button
+        2. POST to this endpoint
+        3. Agent automatically pauses and excuses customer ("Please hold one moment")
+        4. Agent status changes to "paused"
+        5. Supervisor types instructions and clicks "inject"
+        6. Agent receives instructions and acknowledges ("Received")
+        7. Agent status returns to "in_call" and resumes conversation
+        
+        **Flow for Chat Agents:**
+        1. Supervisor clicks whisper button
+        2. POST to this endpoint
+        3. Agent pauses typing
+        4. Agent status changes to "paused"
+        5. Supervisor types instructions and clicks "inject"
+        6. Agent receives instructions and acknowledges ("Received")
+        7. Agent status returns to "in_chat" and resumes conversation
+        
+        **Note**: Customer does NOT see the whisper instructions in either case.
+        
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [instructions]
+              properties:
+                instructions:
+                  type: string
+                  description: Instructions to send to agent
+                  example: "Don't mention pricing. Focus on features."
+                  minLength: 1
+                  maxLength: 500
+      responses:
+        '200':
+          description: Agent paused and instructions sent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  whisper_id:
+                    type: string
+                    format: uuid
+                    description: Unique ID for this whisper session
+                  agent_id:
+                    type: string
+                    format: uuid
+                  agent_status:
+                    type: string
+                    enum: [paused]
+                    description: Agent paused and waiting for instructions
+                  paused_at:
+                    type: string
+                    format: date-time
+                    description: When agent paused
+                  instructions_sent:
+                    type: boolean
+                    example: true
+                  acknowledged:
+                    type: boolean
+                    description: Whether agent acknowledged receipt
+                    example: true
+                  acknowledged_at:
+                    type: string
+                    format: date-time
+                  resumed_at:
+                    type: string
+                    format: date-time
+                    description: When agent resumed after reading instructions
+        '400':
+          description: Agent not in active interaction or already paused
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_active:
+                  value:
+                    error: "Bad Request"
+                    detail: "Agent is not in active call or chat"
+                already_paused:
+                  value:
+                    error: "Bad Request"
+                    detail: "Agent is already paused"
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+ 
+  # ============ INTERACTION ENDPOINTS ============
+  /interactions:
+    get:
+      tags: [Interactions]
+      summary: List interactions
+      description: Get all interactions for supervisor's agents
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, completed, failed]
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: List of interactions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  interactions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Interaction'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+
+    post:
+      tags: [Interactions]
+      summary: Initiate interaction
+      description: Start new call/chat (used by customer PWA)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [interaction_type]
+              properties:
+                interaction_type:
+                  type: string
+                  enum: [voice, chat]
+                phone_number:
+                  type: string
+                  description: Mock phone number from PWA
+                  example: "+1234567890"
+      responses:
+        '201':
+          description: Interaction created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  interaction_id:
+                    type: string
+                    format: uuid
+                  agent:
+                    $ref: '#/components/schemas/Agent'
+                  livekit_token:
+                    type: string
+                    description: LiveKit room access token
+                  livekit_url:
+                    type: string
+                    example: wss://livekit.example.com
+        '503':
+          description: No idle agents available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "No idle agents available"
+
+  /interactions/{interaction_id}:
+    get:
+      tags: [Interactions]
+      summary: Get interaction details
+      parameters:
+        - $ref: '#/components/parameters/InteractionId'
+      responses:
+        '200':
+          description: Interaction details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InteractionDetail'
+
+    patch:
+      tags: [Interactions]
+      summary: Update interaction
+      description: |
+        End interaction or update status.
+        
+        **Note on phone_number field:**
+        This field is updated by the AGENT INTERNALLY during a call, not by the frontend.
+        The agent asks the customer for their phone number, validates it using an MCP tool,
+        and then makes an internal API call to save it to this interaction record.
+      parameters:
+        - $ref: '#/components/parameters/InteractionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [completed, failed]
+                phone_number:
+                  type: string
+                  description: Customer phone number collected by agent (internal agent call only)
+      responses:
+        '200':
+          description: Interaction updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Interaction'
+
+  # ============ ARCHIVE ENDPOINTS ============
+  /archives:
+    get:
+      tags: [Archives]
+      summary: Get call/chat archive
+      description: Historical interactions with summaries
+      parameters:
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: from_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: phone_number
+          in: query
+          schema:
+            type: string
+        - name: tags
+          in: query
+          description: Comma-separated list of tags
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Archive list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  archives:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ArchiveCard'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+
+  /archives/{interaction_id}:
+    get:
+      tags: [Archives]
+      summary: Get archive details
+      description: Full details including summary, tags, CSAT
+      parameters:
+        - $ref: '#/components/parameters/InteractionId'
+      responses:
+        '200':
+          description: Archive details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArchiveDetail'
+
+    patch:
+      tags: [Archives]
+      summary: Update archive tags
+      description: Supervisor can edit tags only
+      parameters:
+        - $ref: '#/components/parameters/InteractionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tags]
+              properties:
+                tags:
+                  $ref: '#/components/schemas/Tags'
+      responses:
+        '200':
+          description: Tags updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArchiveDetail'
+
+  # ============ ANALYTICS ENDPOINTS ============
+  /analytics/supervisor/{supervisor_id}:
+    get:
+      tags: [Analytics]
+      summary: Get supervisor analytics and performance
+      description: |
+        Retrieve comprehensive analytics for supervisor including:
+        - Performance score (calculated with weights)
+        - FCR percentage
+        - Average CSAT
+        - Average handle time
+        - Total interactions
+        - Agent-level breakdown
+        
+        **This endpoint replaces the previous /supervisors/{id}/performance endpoint**
+      parameters:
+        - $ref: '#/components/parameters/SupervisorId'
+        - name: period
+          in: query
+          description: Time period for analytics calculation
+          schema:
+            type: string
+            enum: [today, week, month, all_time]
+            default: month
+      responses:
+        '200':
+          description: Complete analytics and performance data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupervisorAnalytics'
+
+  /analytics/agent/{agent_id}:
+    get:
+      tags: [Analytics]
+      summary: Agent analytics
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [today, week, month, all_time]
+            default: month
+      responses:
+        '200':
+          description: Agent analytics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentAnalytics'
+
+  # ============ REAL-TIME SSE ENDPOINTS ============
+  /realtime/agent/{agent_id}/metrics:
+    get:
+      tags: [Realtime]
+      summary: SSE stream for agent metrics
+      description: |
+        Server-Sent Events stream for real-time metrics.
+        Updates every 5 seconds with sentiment, satisfaction, and feed.
+        
+        **Connection Requirements:**
+        - Keep-alive connection
+        - No caching
+        - EventSource compatible
+        - Heartbeat ping every 30 seconds
+        
+        **Event Types:**
+        - `metrics`: Real-time metrics update
+        - `status`: Agent status change
+        - `ping`: Keep-alive heartbeat
+        - `error`: Error occurred
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '200':
+          description: SSE stream established
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: no-cache
+              description: Prevents caching of SSE stream
+            Connection:
+              schema:
+                type: string
+                example: keep-alive
+              description: Maintains persistent connection
+            X-Accel-Buffering:
+              schema:
+                type: string
+                example: "no"
+              description: Disables buffering for nginx
+          content:
+            text/event-stream:
+              schema:
+                type: object
+                properties:
+                  event:
+                    type: string
+                    enum: [metrics, status, ping, error]
+                  data:
+                    oneOf:
+                      - $ref: '#/components/schemas/RealtimeMetrics'
+                      - $ref: '#/components/schemas/AgentStatusUpdate'
+              examples:
+                metrics:
+                  value: |
+                    event: metrics
+                    data: {"sentiment":"good","satisfaction_score":85,"feed":"Customer inquiring about billing issue"}
+                    
+                status:
+                  value: |
+                    event: status
+                    data: {"status":"in_call","interaction_id":"uuid"}
+                    
+                ping:
+                  value: |
+                    event: ping
+                    data: {"timestamp":"2025-11-21T23:00:00Z"}
+                    
+                error:
+                  value: |
+                    event: error
+                    data: {"error":"Connection lost"}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          description: Service temporarily unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Service Unavailable"
+                detail: "Real-time metrics service is currently unavailable"
+
+  /realtime/supervisor/notifications:
+    get:
+      tags: [Realtime]
+      summary: SSE stream for supervisor notifications
+      description: |
+        Server-Sent Events stream for tool permission requests and agent alerts.
+        
+        **Connection Requirements:**
+        - Keep-alive connection
+        - No caching
+        - EventSource compatible
+        - Heartbeat ping every 30 seconds
+        
+        **Event Types:**
+        - `tool_permission`: Agent requesting tool permission
+        - `agent_alert`: Alert from agent system
+        - `ping`: Keep-alive heartbeat
+      responses:
+        '200':
+          description: SSE notification stream established
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: no-cache
+              description: Prevents caching of SSE stream
+            Connection:
+              schema:
+                type: string
+                example: keep-alive
+              description: Maintains persistent connection
+            X-Accel-Buffering:
+              schema:
+                type: string
+                example: "no"
+              description: Disables buffering for nginx
+          content:
+            text/event-stream:
+              schema:
+                type: object
+                properties:
+                  event:
+                    type: string
+                    enum: [tool_permission, agent_alert, ping]
+                  data:
+                    oneOf:
+                      - $ref: '#/components/schemas/ToolPermissionNotification'
+                      - $ref: '#/components/schemas/AgentAlert'
+              examples:
+                tool_permission:
+                  value: |
+                    event: tool_permission
+                    data: {"notification_type":"permission_required","agent_id":"uuid","tool_name":"get_customer_details","permission_id":"uuid","requires_response":true}
+                    
+                agent_alert:
+                  value: |
+                    event: agent_alert
+                    data: {"alert_type":"critical_sentiment","agent_id":"uuid","agent_name":"Voice Agent 1","message":"Customer sentiment is critical"}
+                    
+                ping:
+                  value: |
+                    event: ping
+                    data: {"timestamp":"2025-11-21T23:00:00Z"}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: Service temporarily unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Service Unavailable"
+                detail: "Notification service is currently unavailable"
+
+
+  # ============ TOOL PERMISSION ENDPOINTS ============
+  /tools/permissions/{permission_id}/respond:
+    post:
+      tags: [Tools]
+      summary: Respond to tool permission request
+      parameters:
+        - name: permission_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [response]
+              properties:
+                response:
+                  type: string
+                  enum: [allowed, denied]
+      responses:
+        '200':
+          description: Response recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permission_id:
+                    type: string
+                    format: uuid
+                  response:
+                    type: string
+                  responded_at:
+                    type: string
+                    format: date-time
+        '408':
+          description: Request timed out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tools/permissions/interaction/{interaction_id}:
+    get:
+      tags: [Tools]
+      summary: Get all tool permissions for interaction
+      parameters:
+        - $ref: '#/components/parameters/InteractionId'
+      responses:
+        '200':
+          description: List of permissions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ToolPermission'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    SupervisorId:
+      name: supervisor_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    AgentId:
+      name: agent_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    InteractionId:
+      name: interaction_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    # ========== Auth Schemas ==========
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [admin, supervisor]
+        profile:
+          oneOf:
+            - $ref: '#/components/schemas/AdminProfile'
+            - $ref: '#/components/schemas/SupervisorProfile'
+
+    AdminProfile:
+      type: object
+      properties:
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    SupervisorProfile:
+      type: object
+      properties:
+        name:
+          type: string
+        supervisor_type:
+          type: string
+          enum: [voice, chat]
+        created_at:
+          type: string
+          format: date-time
+
+    # ========== Supervisor Schemas ==========
+    Supervisor:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        username:
+          type: string
+          example: johndoe
+          description: Display username shown in UI
+        supervisor_type:
+          type: string
+          enum: [voice, chat]
+        email:
+          type: string
+          format: email
+        total_interactions:
+          type: integer
+        performance_score:
+          type: number
+          format: float
+        created_at:
+          type: string
+          format: date-time
+
+    SupervisorDetail:
+      allOf:
+        - $ref: '#/components/schemas/Supervisor'
+        - type: object
+          properties:
+            agents:
+              type: array
+              items:
+                $ref: '#/components/schemas/Agent'
+            recent_interactions:
+              type: array
+              items:
+                $ref: '#/components/schemas/Interaction'
+
+    SupervisorCard:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        agent_type:
+          type: string
+          enum: [voice, chat]
+        performance_today:
+          type: number
+          format: float
+        active_interactions:
+          type: integer
+        total_today:
+          type: integer
+        failed_today:
+          type: integer
+
+    LeaderboardEntry:
+      type: object
+      properties:
+        supervisor_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        agent_type:
+          type: string
+          enum: [voice, chat]
+        total_calls_month:
+          type: integer
+        performance_score:
+          type: number
+          format: float
+        avg_handle_time:
+          type: number
+          description: In seconds
+        rank:
+          type: integer
+
+    CreateSupervisorRequest:
+      type: object
+      required: [name, username, email, password, supervisor_type]
+      properties:
+        name:
+          type: string
+          example: John Doe
+          description: Full name of supervisor
+        username:
+          type: string
+          example: johndoe
+          pattern: '^[a-zA-Z0-9_]{3,20}$'
+          description: Display name for UI (cards, leaderboards). NOT used for login.
+        email:
+          type: string
+          format: email
+          example: john.doe@example.com
+          description: Used for login authentication
+        password:
+          type: string
+          format: password
+          minLength: 8
+        supervisor_type:
+          type: string
+          enum: [voice, chat]
+
+    UpdateSupervisorRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        username:
+          type: string
+          pattern: '^[a-zA-Z0-9_]{3,20}$'
+          description: Display name for UI (cards, leaderboards)
+        password:
+          type: string
+          format: password
+        supervisor_type:
+          type: string
+          enum: [voice, chat]
+
+    # ========== Agent Schemas ==========
+    Agent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        agent_type:
+          type: string
+          enum: [voice, chat]
+        status:
+          type: string
+          enum: [idle, in_call, in_chat, paused]
+        performance_score:
+          type: number
+          format: float
+        total_interactions:
+          type: integer
+        tools:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+
+    AgentDetail:
+      allOf:
+        - $ref: '#/components/schemas/Agent'
+        - type: object
+          properties:
+            system_prompt:
+              type: string
+            mcp_tools:
+              type: object
+            current_interaction:
+              $ref: '#/components/schemas/Interaction'
+            analytics:
+              $ref: '#/components/schemas/AgentAnalytics'
+
+    AgentStatus:
+      type: object
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [idle, in_call, in_chat, paused]
+        current_interaction:
+          $ref: '#/components/schemas/Interaction'
+        realtime_metrics:
+          $ref: '#/components/schemas/RealtimeMetrics'
+
+    AgentDashboardCard:
+      type: object
+      description: Agent card data optimized for supervisor dashboard display
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        agent_type:
+          type: string
+          enum: [voice, chat]
+        status:
+          type: string
+          enum: [idle, in_call, in_chat, paused]
+        performance_score:
+          type: number
+          format: float
+        total_interactions:
+          type: integer
+        tools:
+          type: array
+          items:
+            type: string
+        current_interaction:
+          type: object
+          nullable: true
+          description: Current interaction if agent is active, null if idle
+          properties:
+            id:
+              type: string
+              format: uuid
+            interaction_type:
+              type: string
+              enum: [voice, chat]
+            started_at:
+              type: string
+              format: date-time
+            phone_number:
+              type: string
+        latest_metrics:
+          type: object
+          nullable: true
+          description: Latest real-time metrics if agent is active, null if idle
+          properties:
+            sentiment:
+              type: string
+              enum: [good, neutral, critical]
+            satisfaction_score:
+              type: number
+              format: float
+              minimum: 0
+              maximum: 100
+            feed:
+              type: string
+              description: Short AI-generated sentence summarizing current conversation
+            timestamp:
+              type: string
+              format: date-time
+
+    CreateAgentRequest:
+      type: object
+      required: [name, system_prompt, mcp_tools]
+      properties:
+        name:
+          type: string
+          example: Voice Agent 1
+        system_prompt:
+          type: string
+          example: "You are a helpful customer service agent..."
+        mcp_tools:
+          type: object
+          description: MCP tools JSON configuration
+          example:
+            tools:
+              - name: get_customer_details
+                requires_permission: true
+                config:
+                  endpoint: https://api.example.com/customers
+
+    UpdateAgentRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        system_prompt:
+          type: string
+        mcp_tools:
+          type: object
+
+    # ========== Interaction Schemas ==========
+    Interaction:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+        agent_name:
+          type: string
+        phone_number:
+          type: string
+        interaction_type:
+          type: string
+          enum: [voice, chat]
+        status:
+          type: string
+          enum: [active, completed, failed]
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+        duration_seconds:
+          type: integer
+
+    InteractionDetail:
+      allOf:
+        - $ref: '#/components/schemas/Interaction'
+        - type: object
+          properties:
+            livekit_room_id:
+              type: string
+            realtime_metrics:
+              type: array
+              items:
+                $ref: '#/components/schemas/RealtimeMetrics'
+            tool_permissions:
+              type: array
+              items:
+                $ref: '#/components/schemas/ToolPermission'
+
+    # ========== Archive Schemas ==========
+    ArchiveCard:
+      type: object
+      properties:
+        interaction_id:
+          type: string
+          format: uuid
+        phone_number:
+          type: string
+        date:
+          type: string
+          format: date
+        start_time:
+          type: string
+          example: "10:50am"
+        end_time:
+          type: string
+          example: "12:30pm"
+        duration:
+          type: string
+          example: "21:05"
+        tags:
+          type: array
+          items:
+            type: string
+
+    ArchiveDetail:
+      type: object
+      properties:
+        interaction_id:
+          type: string
+          format: uuid
+        phone_number:
+          type: string
+        interaction_type:
+          type: string
+          enum: [voice, chat]
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+        duration_seconds:
+          type: integer
+        summary:
+          type: string
+        issues:
+          type: array
+          items:
+            type: object
+            properties:
+              issue:
+                type: string
+              status:
+                type: string
+                enum: [resolved, unresolved]
+              priority:
+                type: string
+                enum: [high, medium, low]
+        tags:
+          $ref: '#/components/schemas/Tags'
+        csat_score:
+          type: number
+          format: float
+        resolution_time_seconds:
+          type: integer
+        fcr_status:
+          type: boolean
+
+    Tags:
+      type: object
+      properties:
+        topics:
+          type: array
+          items:
+            type: string
+          example: [billing, technical_support]
+        sentiment:
+          type: string
+          enum: [good, neutral, critical]
+        issues:
+          type: array
+          items:
+            type: object
+            properties:
+              tag:
+                type: string
+              status:
+                type: string
+                enum: [resolved, unresolved]
+
+    # ========== Analytics Schemas ==========
+    SystemAnalytics:
+      type: object
+      properties:
+        agent_type:
+          type: string
+          enum: [voice, chat]
+        period:
+          type: string
+          enum: [today, month]
+        fcr_percentage:
+          type: number
+          format: float
+        avg_csat:
+          type: number
+          format: float
+        avg_handle_time:
+          type: number
+          description: In seconds
+        avg_performance_score:
+          type: number
+          format: float
+        total_interactions:
+          type: integer
+
+    SupervisorAnalytics:
+      type: object
+      properties:
+        supervisor_id:
+          type: string
+          format: uuid
+        period:
+          type: string
+        total_interactions:
+          type: integer
+        fcr_percentage:
+          type: number
+          format: float
+        avg_csat:
+          type: number
+          format: float
+        avg_handle_time:
+          type: number
+        performance_score:
+          type: number
+          format: float
+        agents_breakdown:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentAnalytics'
+
+    AgentAnalytics:
+      type: object
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+        agent_name:
+          type: string
+        total_interactions:
+          type: integer
+        fcr_percentage:
+          type: number
+          format: float
+        avg_csat:
+          type: number
+          format: float
+        avg_handle_time:
+          type: number
+        performance_score:
+          type: number
+          format: float
+
+    SupervisorPerformance:
+      type: object
+      properties:
+        supervisor_id:
+          type: string
+          format: uuid
+        period:
+          type: string
+        total_calls:
+          type: integer
+        performance_score:
+          type: number
+          format: float
+        fcr_percentage:
+          type: number
+        avg_csat:
+          type: number
+        avg_aht:
+          type: number
+        normalized_calls:
+          type: number
+        normalized_aht:
+          type: number
+
+    # ========== Realtime Schemas ==========
+    RealtimeMetrics:
+      type: object
+      properties:
+        interaction_id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        sentiment:
+          type: string
+          enum: [good, neutral, critical]
+        satisfaction_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+        feed:
+          type: string
+          example: "Customer inquiring about billing issue"
+
+    AgentStatusUpdate:
+      type: object
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [idle, in_call, in_chat, paused]
+        interaction_id:
+          type: string
+          format: uuid
+
+    # ========== Tool Schemas ==========
+    ToolPermission:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        interaction_id:
+          type: string
+          format: uuid
+        tool_name:
+          type: string
+        tool_description:
+          type: string
+        requested_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pending, allowed, denied, timeout]
+        supervisor_response:
+          type: string
+          enum: [allowed, denied, timeout]
+        responded_at:
+          type: string
+          format: date-time
+
+    ToolPermissionNotification:
+      type: object
+      properties:
+        notification_type:
+          type: string
+          enum: [permission_required, auto_execute]
+        agent_id:
+          type: string
+          format: uuid
+        agent_name:
+          type: string
+        tool_name:
+          type: string
+        tool_description:
+          type: string
+        permission_id:
+          type: string
+          format: uuid
+        requires_response:
+          type: boolean
+
+    AgentAlert:
+      type: object
+      properties:
+        alert_type:
+          type: string
+          enum: [timeout_warning, critical_sentiment, error]
+        agent_id:
+          type: string
+          format: uuid
+        agent_name:
+          type: string
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    # ========== Error Schemas ==========
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        detail:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    ValidationError:
+      type: object
+      properties:
+        error:
+          type: string
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+
+  responses:
+    Unauthorized:
+      description: Unauthorized - Invalid or missing token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Unauthorized"
+            detail: "Invalid or expired token"
+
+    Forbidden:
+      description: Forbidden - Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Forbidden"
+            detail: "Admin access required"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Not Found"
+            detail: "Resource does not exist"
+
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+          example:
+            error: "Validation Error"
+            detail:
+              - field: "email"
+                message: "Invalid email format"
