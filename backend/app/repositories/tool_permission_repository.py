@@ -1,0 +1,2 @@
+"""Tool permission repository."""
+

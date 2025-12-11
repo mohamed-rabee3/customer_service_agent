@@ -1,0 +1,2 @@
+"""Real-time SSE endpoints."""
+
