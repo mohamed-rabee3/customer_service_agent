@@ -38,10 +38,10 @@ pip install -r requirements-dev.txt
 
 ```bash
 # Windows
-copy .env.example .env
+copy .env .env
 
 # Linux/Mac
-cp .env.example .env
+cp .env .env
 ```
 
 ### Step 5: Configure Environment Variables

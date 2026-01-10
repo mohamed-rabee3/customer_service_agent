@@ -1,18 +1,23 @@
-"""Authentication endpoints."""
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from app.db.supabase_client import supabase
 
-from typing import Annotated
+security = HTTPBearer()
 
-from fastapi import APIRouter, Depends
-
-from app.api.deps import get_current_user
-from app.api.v1.schemas.auth import UserResponse
-
-router = APIRouter(prefix="/auth", tags=["Auth"])
-
-
-@router.get("/me", response_model=UserResponse)
-async def get_current_user_info(
-    current_user: Annotated[UserResponse, Depends(get_current_user)],
-) -> UserResponse:
-    """Get current authenticated user information."""
-    return current_user
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        user_res = supabase.auth.get_user(token)
+        if not user_res.user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
+        # البحث عن بيانات المشرف
+        user_id = user_res.user.id
+        profile = supabase.table("supervisors").select("*").eq("id", user_id).single().execute()
+        
+        if not profile.data:
+            raise HTTPException(status_code=403, detail="Supervisor profile not found")
+            
+        return profile.data
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Auth error: {str(e)}")
