@@ -1,0 +1,89 @@
+ @import "tailwindcss";
+ /* @tailwind base;  */
+ /* @tailwind components;  */
+
+@tailwind utilities;
+@layer utilities {
+  .hide-date-icon::-webkit-calendar-picker-indicator {
+    display: none;
+  }
+  .hide-date-icon {
+    appearance: none;
+  }
+}
+
+@import './variables.css';
+@import './base.css';
+@import './buttons.css';
+@import './cards.css';
+@import './forms.css';
+@import './loading.css';
+@import './dashtable.css';
+@import './search-bar.css';
+@import './App.css';
+/* Loader */
+
+#page-loader {
+  position: fixed;
+  inset: 0;
+  background: #f0fdfa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  
+  opacity: 1;
+  visibility: visible;
+
+  transition: opacity 0.6s ease, visibility 0.6s ease, transform 0.8s ease;
+}
+
+#page-loader.hide {
+  opacity: 0;
+  visibility: hidden;
+  transform: scale(1.05);
+}
+/* The animated dot */
+.loader {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  animation: loaderAnimation 1s infinite linear alternate;
+}
+
+/* Animation */
+@keyframes loaderAnimation {
+  0% {
+    box-shadow: 20px 0 #14b8a6, -20px 0 #14b8a620;
+    background: #14b8a6;
+  }
+  33% {
+    box-shadow: 20px 0 #14b8a6, -20px 0 #14b8a620;
+    background: #14b8a620;
+  }
+  66% {
+    box-shadow: 20px 0 #14b8a620, -20px 0 #14b8a6;
+    background: #14b8a620;
+  }
+  100% {
+    box-shadow: 20px 0 #14b8a620, -20px 0 #14b8a6;
+    background: #14b8a6;
+  }
+}
+/* Section Loader (for parts of page) */
+.section-loader {
+  width: 100%;
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+.auto-fit-text {
+  font-size: clamp(2.5rem, 10vw, 6rem);
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
