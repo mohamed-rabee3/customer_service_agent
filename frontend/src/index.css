@@ -1,0 +1,119 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #1a8e77;
+  /* Teal */
+  --primary-dark: #136f5d;
+  --bg: #f0fdfa;
+  /* Cyan Tint for Light Mode body */
+  --surface: #ffffff;
+  /* White for cards/elements in Light Mode */
+  --text-main: #1e293b;
+  --text-secondary: #64748b;
+  --text-inverse: #ffffff;
+  --border-color: #ccfbf1;
+  --border: #ccfbf1;
+  --input-bg: rgba(255, 255, 255, 0.1);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+
+  /* Border Radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 9999px;
+
+  /* Shared */
+  --accent: #14b8a6;
+  --success: #10b981;
+  --danger: #ef4444;
+  --font-family: 'Manrope', 'Cairo', sans-serif;
+  --transition: all 0.3s ease;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-family);
+  background-color: var(--bg);
+  color: var(--text-main);
+  /* direction: rtl; Removed for LTR layout per user request */
+  transition: var(--transition);
+}
+
+body.dark-theme {
+  --primary: #1a8e77;
+  /* Keep primary teal */
+  --primary-dark: #111;
+  --bg: #121212;
+  /* Dark BG */
+  --surface: #1e1e1e;
+  /* Dark Surface */
+  --text-main: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-inverse: #e2e8f0;
+  /* Text on primary usually */
+  --border-color: #333;
+  --border: #333;
+  --input-bg: rgba(255, 255, 255, 0.05);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+
+  /* Border Radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 9999px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* ────────────────────────────────────────────────
+   Global Loading Spinner (3 pulsing dots)
+   ──────────────────────────────────────────────── */
+.loading {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  align-items: center;
+}
+
+.loading span {
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  animation: pulse 1.4s infinite ease-in-out;
+}
+
+.loading span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.loading span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes pulse {
+
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+
+  40% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}

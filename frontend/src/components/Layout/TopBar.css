@@ -1,0 +1,224 @@
+.topbar-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 60px;
+    background-color: var(--primary);
+    /* Use variable */
+    padding: 0 30px;
+    box-sizing: border-box;
+    position: fixed;
+    top: 0;
+    z-index: 1000;
+}
+
+body.dark-theme .topbar-container {
+    background-color: #1a1a1a;
+    /* Darker topbar in dark mode */
+    border-bottom: 1px solid #333;
+}
+
+.icon-wrapper {
+    position: relative;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+.icon-wrapper:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+}
+
+.icon-wrapper::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    top: 45px;
+    left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    background: rgba(26, 142, 119, 0.95);
+    backdrop-filter: blur(5px);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 15px rgba(26, 142, 119, 0.3);
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 9999;
+}
+
+.icon-wrapper::before {
+    content: '';
+    position: absolute;
+    top: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-bottom-color: rgba(26, 142, 119, 0.95);
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s ease;
+}
+
+.icon-wrapper:hover::after,
+.icon-wrapper:hover::before {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+}
+
+.topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.user-profile-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-left: 15px;
+    border-left: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.topbar-left {
+    display: flex;
+    align-items: center;
+    /* padding-left: 60px; Removed for aligned LTR layout */
+}
+
+.left-icons-group {
+    display: flex;
+    gap: 30px;
+}
+
+.topbar-center {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    padding: 0 20px;
+}
+
+.Search-box {
+    display: flex;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 6px 18px;
+    border-radius: 25px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    width: 280px;
+    transition: all 0.3s ease;
+}
+
+.Search-box:focus-within {
+    background: rgba(255, 255, 255, 0.2);
+    width: 320px;
+    border-color: white;
+}
+
+.Search-box input {
+    background: transparent;
+    border: none;
+    outline: none;
+    color: white;
+    margin-left: 8px;
+    width: 100%;
+}
+
+.Search-box input::placeholder {
+    color: #ffffff !important;
+    opacity: 0.9;
+    font-size: 14px;
+}
+
+
+.Search-box input:focus::placeholder {
+    opacity: 0.4;
+}
+
+.topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.right-icons-group {
+    display: flex;
+    gap: 40px;
+    padding-right: 20px;
+}
+
+
+.icon-btn {
+    cursor: pointer;
+    display: flex;
+    color: white;
+    align-items: center;
+    position: relative;
+}
+
+.user-profile-section {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-left: 15px;
+    border-left: 1px solid rgba(234, 232, 232, 0.2);
+}
+
+.user-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.user-name {
+    color: white;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.user-status {
+    font-size: 10px;
+    color: #4dfd54;
+}
+
+
+body.dark-theme {
+    background-color: #121212 !important;
+    color: white !important;
+}
+
+:root {
+    --main-bg: #ffffff;
+    --text-color: #000000;
+}
+
+body.dark-theme {
+    --main-bg: #000000;
+    --text-color: #ffffff;
+}
+
+body {
+    background-color: var(--main-bg) !important;
+    color: var(--text-color) !important;
+    transition: background-color 0.3s ease;
+}
+
+body.dark-theme .app-content,
+body.dark-theme .main-panel,
+body.dark-theme .dashboard-page {
+    background-color: var(--main-bg) !important;
+    color: var(--text-color) !important;
+}
