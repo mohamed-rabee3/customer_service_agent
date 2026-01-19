@@ -34,7 +34,7 @@ VIII. [CONCLUSION](#viii-conclusion)
 
 # I. Team Structure
 
-This project is brought to you by a dedicated team of developers and researchers divided into specialized units:
+This project is brought to you by a dedicated team of developers divided into specialized units:
 
 ## A. Frontend Team
 *   **Omnia Ashraf**
@@ -178,4 +178,5 @@ While the current Proof of Concept is robust, the path to a commercial product i
 # VIII. Conclusion
 
  The **Customer Service AI Agents Platform** represents a significant step forward in automated support. By harmonizing the speed of AI with the empathy of human supervision, we are building a system that is not just a tool, but a teammate. This seminar documentation outlines the architectural and functional backbone of that vision.
+
 
