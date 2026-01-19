@@ -45,7 +45,7 @@ This project is brought to you by a dedicated team of developers and researchers
 ## B. Backend Team
 *   **Yousef Mohamed**
 *   **Moaz Mohamed**
-*   **Sondos Mohamed**
+*   **Sondos Mossad**
 *   **Yasmin Ashraf**
 
 ## C. AI Team
@@ -178,3 +178,4 @@ While the current Proof of Concept is robust, the path to a commercial product i
 # VIII. Conclusion
 
  The **Customer Service AI Agents Platform** represents a significant step forward in automated support. By harmonizing the speed of AI with the empathy of human supervision, we are building a system that is not just a tool, but a teammate. This seminar documentation outlines the architectural and functional backbone of that vision.
+
