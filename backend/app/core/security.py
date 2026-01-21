@@ -79,7 +79,10 @@ async def get_current_user(
     user_uuid = UUID(user_id_str)
     display_name = _extract_display_name(getattr(user_data, "user_metadata", None), user_data.email or "")
 
-    # Check admin role
+    # Set user's JWT for RLS enforcement on subsequent queries
+    supabase.postgrest.auth(token)
+
+    # Check admin role (RLS: admin can see their own row)
     admin_result = (
         supabase.table("admin")
         .select("created_at")
@@ -100,7 +103,7 @@ async def get_current_user(
             profile=profile,
         )
 
-    # Check supervisor role
+    # Check supervisor role (RLS: supervisor can see their own row)
     supervisor_result = (
         supabase.table("supervisors")
         .select("supervisor_type, created_at")

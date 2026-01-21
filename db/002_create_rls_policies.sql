@@ -149,6 +149,12 @@ CREATE POLICY "admin_full_access_supervisors" ON supervisors
     TO authenticated 
     USING (EXISTS (SELECT 1 FROM admin WHERE "userID" = auth.uid()));
 
+-- Admin can read their own admin record (for role lookup during authentication)
+CREATE POLICY "admin_own_admin_data" ON admin
+    FOR SELECT
+    TO authenticated
+    USING ("userID" = auth.uid());
+
 -- =====================================================
 -- NOTE: NO POLICIES FOR ANON ROLE
 -- =====================================================
