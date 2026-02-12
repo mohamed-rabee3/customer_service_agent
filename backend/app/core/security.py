@@ -79,10 +79,7 @@ async def get_current_user(
     user_uuid = UUID(user_id_str)
     display_name = _extract_display_name(getattr(user_data, "user_metadata", None), user_data.email or "")
 
-    # Set user's JWT for RLS enforcement on subsequent queries
-    supabase.postgrest.auth(token)
-
-    # Check admin role (RLS: admin can see their own row)
+    # Check admin role
     admin_result = (
         supabase.table("admin")
         .select("created_at")
@@ -103,7 +100,7 @@ async def get_current_user(
             profile=profile,
         )
 
-    # Check supervisor role (RLS: supervisor can see their own row)
+    # Check supervisor role
     supervisor_result = (
         supabase.table("supervisors")
         .select("supervisor_type, created_at")
@@ -138,3 +135,19 @@ async def get_current_user(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="User role not found",
     )
+# ==============================
+# Role-based Dependencies
+# ==============================
+
+async def require_admin(
+    current_user: Annotated[UserResponse, Depends(get_current_user)],
+) -> UserResponse:
+    """
+    Ensure current user is an admin.
+    """
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required",
+        )
+    return current_user
