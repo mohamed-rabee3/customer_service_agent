@@ -10,7 +10,7 @@ from supabase import Client
 
 from app.api.v1.schemas.auth import AdminProfile, SupervisorProfile, UserResponse
 from app.core.constants import SupervisorType, UserRole
-from app.db.supabase import get_supabase_client
+from app.db.supabase import get_supabase_client, get_supabase_service_client  # ← CHANGED
 
 # HTTP Bearer token scheme (manual error handling for 401 responses)
 security = HTTPBearer(auto_error=False)
@@ -58,7 +58,8 @@ async def get_current_user(
             detail="Missing authentication token",
         )
 
-    supabase: Client = get_supabase_client()
+    # Use service client to bypass RLS for role checking
+    supabase: Client = get_supabase_service_client()  # ← CHANGED
 
     try:
         response = supabase.auth.get_user(token)
@@ -79,10 +80,7 @@ async def get_current_user(
     user_uuid = UUID(user_id_str)
     display_name = _extract_display_name(getattr(user_data, "user_metadata", None), user_data.email or "")
 
-    # Set user's JWT for RLS enforcement on subsequent queries
-    supabase.postgrest.auth(token)
-
-    # Check admin role (RLS: admin can see their own row)
+    # Check admin role
     admin_result = (
         supabase.table("admin")
         .select("created_at")
@@ -103,7 +101,7 @@ async def get_current_user(
             profile=profile,
         )
 
-    # Check supervisor role (RLS: supervisor can see their own row)
+    # Check supervisor role
     supervisor_result = (
         supabase.table("supervisors")
         .select("supervisor_type, created_at")

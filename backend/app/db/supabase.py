@@ -20,7 +20,7 @@ def get_supabase_client() -> Client:
     if _supabase_client is None:
         _supabase_client = create_client(
             settings.supabase_url,
-            settings.supabase_key,
+            settings.supabase_service_key,  # Using service server key to bypass RLS
         )
 
     return _supabase_client
