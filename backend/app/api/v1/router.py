@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import agents, auth, supervisors
+from app.api.v1.endpoints import admin, agents, analytics, archives, auth, interactions, supervisors
 
 api_router = APIRouter()
 
@@ -10,3 +10,7 @@ api_router = APIRouter()
 api_router.include_router(auth.router)
 api_router.include_router(agents.router)
 api_router.include_router(supervisors.router)
+api_router.include_router(archives.router, prefix="/archives", tags=["Archives"])
+api_router.include_router(interactions.router, prefix="/interactions", tags=["Interactions"])
+api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
+api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
