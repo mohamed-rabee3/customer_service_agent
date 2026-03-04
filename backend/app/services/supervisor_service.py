@@ -183,7 +183,11 @@ def update_supervisor(supervisor_id: UUID, data: SupervisorUpdate) -> dict:
             detail="Update blocked by database policy",
         )
 
-    return result.data[0]
+    row = result.data[0]
+    row["id"] = row.get("userID", row.get("id"))
+    row.setdefault("name", "")
+    row.setdefault("total_interactions", 0)
+    return row
 
 
 def delete_supervisor(supervisor_id: UUID, deleted_by: str) -> dict:
