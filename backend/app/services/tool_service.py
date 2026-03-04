@@ -52,8 +52,6 @@ class ToolService:
             .table("tool_permissions")
             .update({
                 "status": response,
-                "responded_at": datetime.now(timezone.utc).isoformat(),
-                "responded_by": user_id,
             })
             .eq("id", permission_id)
             .execute()
