@@ -1,31 +1,25 @@
-"""Supervisor endpoints - Router layer for supervisor API (Moaz's endpoints)."""
+"""Supervisor endpoints - Router layer for supervisor API."""
 
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.api.deps import require_admin
 from app.api.v1.schemas.auth import UserResponse
 from app.api.v1.schemas.supervisor import (
+    SupervisorCreate,
     SupervisorDashboardResponse,
     SupervisorDetailResponse,
     SupervisorListResponse,
+    SupervisorResponse,
+    SupervisorUpdate,
 )
 from app.core.constants import SupervisorType, UserRole
 from app.core.security import get_current_user
 from app.services import supervisor_service
 
 router = APIRouter(prefix="/supervisors", tags=["Supervisors"])
-
-
-def require_admin(current_user: UserResponse) -> UserResponse:
-    """Check if user is admin, raise 403 if not."""
-    if current_user.role != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required",
-        )
-    return current_user
 
 
 @router.get(
@@ -63,7 +57,7 @@ async def get_supervisor_dashboard(
     description="Get paginated list of all supervisors. Admin only.",
 )
 async def list_supervisors(
-    current_user: Annotated[UserResponse, Depends(get_current_user)],
+    current_user: Annotated[UserResponse, Depends(require_admin)],
     supervisor_type: SupervisorType | None = Query(None, description="Filter by type"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
@@ -75,8 +69,6 @@ async def list_supervisors(
         401: Not authenticated
         403: Admin access required
     """
-    require_admin(current_user)
-
     list_data = supervisor_service.list_supervisors(
         page=page,
         limit=limit,
@@ -115,3 +107,89 @@ async def get_supervisor_detail(
     )
 
     return SupervisorDetailResponse.model_validate(detail_data)
+
+
+# ==============================
+# Supervisor CRUD (Admin only) — Sundus's endpoints
+# ==============================
+
+
+@router.post(
+    "",
+    response_model=SupervisorResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new supervisor",
+    description="Create a new supervisor with auth user. Admin only.",
+)
+async def create_supervisor(
+    data: SupervisorCreate,
+    current_user: Annotated[UserResponse, Depends(require_admin)],
+) -> SupervisorResponse:
+    """
+    Create a new supervisor (Admin only).
+
+    Creates an auth user in Supabase and a supervisor record.
+
+    Raises:
+        400: Failed to create auth user
+        401: Not authenticated
+        403: Admin access required
+    """
+    result = supervisor_service.create_supervisor(data)
+    return SupervisorResponse.model_validate(result)
+
+
+@router.put(
+    "/{supervisor_id}",
+    response_model=SupervisorResponse,
+    summary="Update supervisor",
+    description="Update supervisor fields. Admin only.",
+)
+async def update_supervisor(
+    supervisor_id: UUID,
+    data: SupervisorUpdate,
+    current_user: Annotated[UserResponse, Depends(require_admin)],
+) -> SupervisorResponse:
+    """
+    Update a supervisor (Admin only).
+
+    Raises:
+        400: No fields to update
+        401: Not authenticated
+        403: Admin access required
+        404: Supervisor not found
+    """
+    result = supervisor_service.update_supervisor(supervisor_id, data)
+    return SupervisorResponse.model_validate(result)
+
+
+@router.delete(
+    "/{supervisor_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Delete supervisor (DANGEROUS)",
+    description="Delete supervisor, cascade agents and interactions. Admin only.",
+)
+async def delete_supervisor(
+    supervisor_id: UUID,
+    current_user: Annotated[UserResponse, Depends(require_admin)],
+):
+    """
+    Delete a supervisor with cascade (Admin only).
+
+    This is a DANGEROUS operation that:
+    1. Checks for active interactions
+    2. Deletes all interactions for supervisor's agents
+    3. Deletes all agents
+    4. Deletes the supervisor record
+    5. Deletes the auth user
+
+    Raises:
+        401: Not authenticated
+        403: Admin access required
+        404: Supervisor not found
+        409: Cannot delete — has active interactions
+    """
+    return supervisor_service.delete_supervisor(
+        supervisor_id=supervisor_id,
+        deleted_by=str(current_user.id),
+    )

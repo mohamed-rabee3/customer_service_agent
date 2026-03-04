@@ -69,3 +69,19 @@ class SupervisorDashboardResponse(BaseModel):
 
     agents: list[AgentDashboardCard]
     total: int
+
+
+class SupervisorCreate(BaseModel):
+    """Schema for creating a new supervisor (admin only)."""
+
+    email: str = Field(..., description="Email for auth user creation")
+    password: str = Field(..., min_length=6, description="Password for auth user")
+    supervisor_type: SupervisorType = Field(default=SupervisorType.VOICE, description="Supervisor type")
+
+
+class SupervisorUpdate(BaseModel):
+    """Schema for updating a supervisor (admin only)."""
+
+    supervisor_type: SupervisorType | None = None
+    performance_score: float | None = None
+    total_interactions: int | None = None
