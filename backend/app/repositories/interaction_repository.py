@@ -164,13 +164,13 @@ class InteractionRepository:
         current = self.supabase.table("interactions")\
             .select("started_at")\
             .eq("id", str(interaction_id))\
-            .single()\
+            .limit(1)\
             .execute()
             
         if not current.data:
             return None
             
-        start_time_str = current.data.get("started_at")
+        start_time_str = current.data[0].get("started_at")
         updates = {
             "status": status, 
             "end_at": datetime.utcnow().isoformat()  # DB column is 'end_at', not 'ended_at'
@@ -186,13 +186,13 @@ class InteractionRepository:
         response = self.supabase.table("interactions")\
             .select("*, agents(name)")\
             .eq("id", str(interaction_id))\
-            .single()\
+            .limit(1)\
             .execute()
             
         if not response.data:
             return None
             
-        data = response.data
+        data = response.data[0]
         if "agents" in data and data["agents"]:
              data["agent_name"] = data["agents"].get("name", "Unknown")
         else:
