@@ -316,11 +316,11 @@ class AnalyticsRepository:
         # We will fetch the Supervisor's ID for this agent, then fetch all sibling agents to calculate Min/Max.
         
         # 1. Get Agent & Supervisor
-        agent_res = self.supabase.table("agents").select("name, supervisor_id").eq("id", str(agent_id)).single().execute()
+        agent_res = self.supabase.table("agents").select("name, supervisor_id").eq("id", str(agent_id)).limit(1).execute()
         if not agent_res.data:
             return AgentAnalytics(agent_id=str(agent_id), agent_name="Unknown", total_interactions=0, avg_handle_time=0, fcr_percentage=0, avg_csat=0, performance_score=0)
             
-        supervisor_id = agent_res.data["supervisor_id"]
+        supervisor_id = agent_res.data[0]["supervisor_id"]
         
         # 2. Reuse Supervisor Logic
         # This is inefficient (fetches all agents) but ensures 100% consistency with the formula and context.
