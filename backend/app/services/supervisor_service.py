@@ -8,7 +8,7 @@ from fastapi import HTTPException, status
 from app.api.v1.schemas.supervisor import SupervisorCreate, SupervisorUpdate
 from app.core.constants import SupervisorType, UserRole
 from app.core.exceptions import ForbiddenException, NotFoundException
-from app.db.supabase import get_supabase_client
+from app.db.supabase import get_supabase_client, get_supabase_service_client
 from app.repositories.supervisor_repository import SupervisorModel, supervisor_repository
 
 
@@ -112,11 +112,11 @@ def create_supervisor(data: SupervisorCreate) -> dict:
     1. Creates an auth user in Supabase
     2. Creates a supervisor record linked to the auth user
     """
-    supabase = get_supabase_client()
+    supabase_admin = get_supabase_service_client()
 
     # Create auth user via Supabase Admin API
     try:
-        auth_user = supabase.auth.admin.create_user({
+        auth_user = supabase_admin.auth.admin.create_user({
             "email": data.email,
             "password": data.password,
             "email_confirm": True,
@@ -135,7 +135,7 @@ def create_supervisor(data: SupervisorCreate) -> dict:
 
     # Create supervisor record
     result = (
-        supabase.table("supervisors")
+        supabase_admin.table("supervisors")
         .insert({
             "userID": str(auth_user.user.id),
             "supervisor_type": data.supervisor_type.value,
@@ -143,7 +143,11 @@ def create_supervisor(data: SupervisorCreate) -> dict:
         .execute()
     )
 
-    return result.data[0]
+    row = result.data[0]
+    row["id"] = row.get("userID", row.get("id"))
+    row.setdefault("name", "")
+    row.setdefault("total_interactions", 0)
+    return row
 
 
 def update_supervisor(supervisor_id: UUID, data: SupervisorUpdate) -> dict:
@@ -240,7 +244,8 @@ def delete_supervisor(supervisor_id: UUID, deleted_by: str) -> dict:
 
     # Delete auth user
     try:
-        supabase.auth.admin.delete_user(str(supervisor_id))
+        supabase_admin = get_supabase_service_client()
+        supabase_admin.auth.admin.delete_user(str(supervisor_id))
     except Exception:
         pass  # Auth user deletion is best-effort
 
