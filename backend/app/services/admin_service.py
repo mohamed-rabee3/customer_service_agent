@@ -2,27 +2,27 @@
 from typing import List, Dict, Any
 from app.db.supabase import get_supabase_client
 from app.api.v1.schemas.admin import AdminDashboardResponse, SupervisorCard, LeaderboardEntry
-from app.repositories.supervisor_repository import SupervisorRepository
 
 class AdminService:
     def __init__(self):
         self.supabase = get_supabase_client()
-        self.repository = SupervisorRepository(self.supabase)
 
     async def get_dashboard_data(self) -> AdminDashboardResponse:
         """Get compiled data for admin dashboard with strict active counts."""
-        # 1. Get all supervisors (base list)
-        all_supervisors = self.repository.get_supervisors_by_performance(limit=100)
+        # 1. Get all supervisors
+        sup_res = self.supabase.table("supervisors").select("*").order("performance_score", desc=True).limit(100).execute()
+        all_supervisors = sup_res.data or []
         
-        # 2. Get real-time active calls/chats stats
-        active_stats = self.repository.get_active_supervisor_stats()
+        # 2. Get active interactions count per supervisor
+        active_res = self.supabase.table("interactions").select("agent_id, agents!inner(supervisor_id)").eq("status", "active").execute()
+        active_stats = {}
+        for item in (active_res.data or []):
+            sup_id = item.get("agents", {}).get("supervisor_id", "")
+            if sup_id:
+                active_stats[sup_id] = active_stats.get(sup_id, 0) + 1
         
-        # 3. Filter active list (Supervisors who have > 0 active agents)
-        # Docs: "Displays supervisors currently handling active calls or chats"
+        # 3. Build active supervisors list
         active_list_models = []
-        
-        # We need to map the performance list to the active stats
-        # If a supervisor has active agents, they go into the active slider list
         for item in all_supervisors:
             sup_id = item["userID"]
             active_count = active_stats.get(sup_id, 0)
@@ -38,12 +38,10 @@ class AdminService:
                     active_agents_count=active_count
                 ))
                 
-        # Slice to max 15 as per docs
         active_list_final = active_list_models[:15]
             
         # 4. Leaderboard (Top 5 by performance)
         leaderboard = []
-        # The repository already returns ordered by performance desc
         for i, item in enumerate(all_supervisors[:5]):
             leaderboard.append(LeaderboardEntry(
                 id=item["userID"],
@@ -53,7 +51,8 @@ class AdminService:
             ))
             
         return AdminDashboardResponse(
-            total_active_supervisors=len(active_list_models), # Total currently active
+            total_active_supervisors=len(active_list_models),
             active_supervisors=active_list_final,
             leaderboard=leaderboard
         )
+

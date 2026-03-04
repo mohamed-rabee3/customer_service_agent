@@ -33,12 +33,12 @@ async def get_agent_analytics(
     service = AnalyticsService()
     from app.db.supabase import get_supabase_client
     supabase = get_supabase_client()
-    agent_res = supabase.table("agents").select("supervisor_id").eq("id", str(agent_id)).single().execute()
+    agent_res = supabase.table("agents").select("supervisor_id").eq("id", str(agent_id)).limit(1).execute()
     
     if not agent_res.data:
         raise HTTPException(status_code=404, detail="Agent not found")
         
-    if current_user.role != UserRole.ADMIN and str(current_user.id) != agent_res.data["supervisor_id"]:
+    if current_user.role != UserRole.ADMIN and str(current_user.id) != agent_res.data[0]["supervisor_id"]:
         raise HTTPException(status_code=403, detail="Not authorized")
         
     return await service.get_agent_analytics(agent_id, time_period)
