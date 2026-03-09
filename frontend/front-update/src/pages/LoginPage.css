@@ -1,0 +1,620 @@
+/* ================================
+   LOGIN PAGE - PURE MINIMALIST WHITE
+   ================================ */
+
+/* Container - Pure white background */
+.login-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: #ffffff;
+    font-family: 'Manrope', 'Inter', sans-serif;
+    padding: 24px;
+}
+
+/* Card - Borderless, seamless white */
+.login-card {
+    display: flex;
+    align-items: stretch;
+    width: 900px;
+    max-width: 100%;
+    min-height: 520px;
+    background: #ffffff;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: visible;
+    animation: cardEntrance 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes cardEntrance {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ================================
+   LEFT PANEL - FLOATING ROBOT
+   ================================ */
+.illustration {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 60px 40px;
+    background: #ffffff;
+    position: relative;
+    animation: fadeIn 0.8s ease-out forwards;
+    animation-delay: 0.15s;
+    opacity: 0;
+    min-height: 480px;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/* Robot wrapper - centered floating effect */
+.robot-wrapper {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    max-width: 100%;
+}
+
+/* Floating Robot - large, prominent, crisp */
+.robot-img {
+    width: 380px;
+    max-width: 90%;
+    height: auto;
+    object-fit: contain;
+    animation: robotFloat 4s ease-in-out infinite;
+    position: relative;
+    z-index: 2;
+    background: #ffffff;
+    border: none;
+    box-shadow: none;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+}
+
+@keyframes robotFloat {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-16px);
+    }
+}
+
+/* Larger soft radial shadow underneath robot */
+.robot-shadow {
+    width: 200px;
+    height: 32px;
+    background: radial-gradient(ellipse, rgba(84, 119, 146, 0.2) 0%, transparent 70%);
+    border-radius: 50%;
+    margin-top: 16px;
+    filter: blur(10px);
+    animation: shadowPulse 4s ease-in-out infinite;
+}
+
+@keyframes shadowPulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.5;
+        transform: scale(0.75);
+    }
+}
+
+/* Hide old elements */
+.robot-backdrop,
+.robot-container,
+.chat-bubble,
+.bubble-dot,
+.sound-wave {
+    display: none !important;
+}
+
+/* ================================
+   RIGHT PANEL - FORM SECTION
+   ================================ */
+.form-section {
+    flex: 1;
+    padding: 48px 56px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    animation: fadeInRight 0.8s ease-out forwards;
+    animation-delay: 0.25s;
+    opacity: 0;
+    background: #ffffff;
+    /* No border or divider */
+    border: none;
+    box-shadow: none;
+}
+
+@keyframes fadeInRight {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.form-section h2 {
+    font-size: 32px;
+    font-weight: 800;
+    margin-bottom: 32px;
+    color: #213448;
+    letter-spacing: -0.5px;
+}
+
+/* ================================
+   INPUT FIELDS - MODERN STYLE
+   ================================ */
+.input-group {
+    margin-bottom: 18px;
+}
+
+.input-group label {
+    display: block;
+    margin-bottom: 8px;
+    color: #374151;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.optional-label {
+    font-size: 12px;
+    color: #9ca3af;
+    font-weight: 400;
+}
+
+.input-field {
+    width: 100%;
+    padding: 14px 16px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 12px;
+    font-size: 15px;
+    font-family: inherit;
+    background: #f9fafb;
+    transition: all 0.25s ease;
+    outline: none;
+}
+
+.input-field::placeholder {
+    color: #9ca3af;
+}
+
+.input-field:hover {
+    border-color: #d1d5db;
+    background: #ffffff;
+}
+
+.input-field:focus {
+    border-color: #547792;
+    background: #ffffff;
+    box-shadow: 
+        0 0 0 4px rgba(84, 119, 146, 0.12),
+        0 2px 8px rgba(84, 119, 146, 0.08);
+}
+
+/* ================================
+   CUSTOM RADIO BUTTONS - MODERN
+   ================================ */
+.role-radio-group {
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+}
+
+.custom-radio {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    padding: 14px 18px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 14px;
+    transition: all 0.25s ease;
+    background: #f9fafb;
+    flex: 1;
+    justify-content: center;
+}
+
+.custom-radio:hover {
+    border-color: #94B4C1;
+    background: #ffffff;
+    transform: translateY(-1px);
+}
+
+.custom-radio.selected {
+    border-color: #213448;
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    box-shadow: 
+        0 0 0 3px rgba(33, 52, 72, 0.08),
+        0 4px 12px rgba(33, 52, 72, 0.1);
+}
+
+.custom-radio input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.radio-circle {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #d1d5db;
+    border-radius: 50%;
+    position: relative;
+    transition: all 0.25s ease;
+    flex-shrink: 0;
+}
+
+.radio-circle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 10px;
+    height: 10px;
+    background: #213448;
+    border-radius: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    transition: transform 0.2s ease;
+}
+
+.custom-radio.selected .radio-circle {
+    border-color: #213448;
+}
+
+.custom-radio.selected .radio-circle::after {
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.radio-text {
+    font-size: 14px;
+    font-weight: 600;
+    color: #4b5563;
+    transition: color 0.2s ease;
+}
+
+.custom-radio.selected .radio-text {
+    color: #213448;
+    font-weight: 700;
+}
+
+/* ================================
+   SUPERVISOR TYPE CARDS
+   ================================ */
+.supervisor-type-group {
+    animation: slideDownScale 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    padding: 12px;
+    border-radius: 10px;
+    margin-top: -2px;
+    border: 1px solid rgba(148, 180, 193, 0.15);
+}
+
+@keyframes slideDownScale {
+    from {
+        opacity: 0;
+        transform: translateY(-12px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.supervisor-cards {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.supervisor-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 12px 10px;
+    background: white;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.supervisor-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(33, 52, 72, 0.02) 0%, rgba(84, 119, 146, 0.05) 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.supervisor-card:hover {
+    border-color: #94B4C1;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(33, 52, 72, 0.1);
+}
+
+.supervisor-card:hover::before {
+    opacity: 1;
+}
+
+.supervisor-card.selected {
+    border-color: #213448;
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    box-shadow: 
+        0 0 0 3px rgba(33, 52, 72, 0.06),
+        0 6px 16px rgba(33, 52, 72, 0.1);
+    transform: translateY(-1px);
+}
+
+.card-icon {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+    border-radius: 8px;
+    color: #547792;
+    transition: all 0.3s ease;
+}
+
+.supervisor-card.selected .card-icon {
+    background: linear-gradient(135deg, #213448 0%, #547792 100%);
+    color: white;
+    box-shadow: 0 4px 12px rgba(33, 52, 72, 0.3);
+}
+
+.card-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #4a5568;
+    transition: color 0.3s ease;
+}
+
+.supervisor-card.selected .card-label {
+    color: #213448;
+}
+
+.card-check {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 16px;
+    height: 16px;
+    background: #213448;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.card-check svg {
+    width: 10px;
+    height: 10px;
+    color: white;
+}
+
+.supervisor-card.selected .card-check {
+    opacity: 1;
+    transform: scale(1);
+}
+
+/* ================================
+   LOGIN BUTTON - FULL WIDTH MODERN
+   ================================ */
+.login-button {
+    position: relative;
+    width: 100%;
+    background: linear-gradient(135deg, #213448 0%, #2d4a5e 100%);
+    color: #ffffff;
+    border: none;
+    padding: 16px 24px;
+    border-radius: 16px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 24px;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    box-shadow: 0 6px 20px rgba(33, 52, 72, 0.2);
+}
+
+.login-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 32px rgba(33, 52, 72, 0.3);
+    filter: brightness(1.1);
+}
+
+.login-button:active {
+    transform: translateY(0);
+    filter: brightness(0.95);
+}
+
+.button-text {
+    position: relative;
+    z-index: 1;
+}
+
+.button-shine {
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 50%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.25),
+        transparent
+    );
+    transform: skewX(-25deg);
+    animation: buttonShine 3s ease-in-out infinite;
+}
+
+@keyframes buttonShine {
+    0%, 100% {
+        left: -100%;
+    }
+    50%, 60% {
+        left: 150%;
+    }
+}
+
+/* ================================
+   RESPONSIVE DESIGN
+   ================================ */
+
+/* Tablet / smaller desktop */
+@media (max-width: 1024px) {
+    .login-card {
+        width: 800px;
+    }
+
+    .illustration {
+        padding: 40px 32px;
+        min-height: 400px;
+    }
+
+    .robot-img {
+        width: 280px;
+    }
+
+    .robot-shadow {
+        width: 160px;
+        height: 24px;
+    }
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+    .login-card {
+        flex-direction: column;
+        min-height: auto;
+        width: 100%;
+        max-width: 420px;
+    }
+
+    /* Show illustration on mobile - centered above form */
+    .illustration {
+        display: flex;
+        padding: 48px 24px 24px;
+        min-height: auto;
+    }
+
+    .robot-img {
+        width: 200px;
+    }
+
+    .robot-shadow {
+        width: 120px;
+        height: 20px;
+        margin-top: 12px;
+    }
+
+    .form-section {
+        padding: 24px 32px 44px;
+    }
+
+    .form-section h2 {
+        font-size: 28px;
+        text-align: center;
+        margin-bottom: 28px;
+    }
+
+    .role-radio-group {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .custom-radio {
+        justify-content: flex-start;
+        padding: 14px 18px;
+    }
+
+    .supervisor-cards {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .supervisor-card {
+        flex-direction: row;
+        padding: 16px 18px;
+        justify-content: flex-start;
+    }
+
+    .card-icon {
+        width: 40px;
+        height: 40px;
+    }
+}
+
+/* Small mobile */
+@media (max-width: 480px) {
+    .login-container {
+        padding: 16px;
+    }
+
+    .illustration {
+        padding: 36px 20px 20px;
+    }
+
+    .robot-img {
+        width: 160px;
+    }
+
+    .robot-shadow {
+        width: 100px;
+        height: 16px;
+    }
+
+    .form-section {
+        padding: 20px 24px 40px;
+    }
+
+    .form-section h2 {
+        font-size: 26px;
+    }
+
+    .input-field {
+        padding: 14px 16px;
+        font-size: 16px;
+    }
+
+    .login-button {
+        padding: 16px 24px;
+        border-radius: 14px;
+    }
+}

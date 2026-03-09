@@ -1,0 +1,599 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Primary Colors - Navy Blue (Modern Tech) */
+  --primary: 211 36% 21%;
+  --primary-dark: 211 42% 10%;
+  --primary-light: 206 28% 45%;
+  --primary-hex: #213448;
+  
+  /* Accent Colors - Light Blue */
+  --accent: 206 28% 45%;
+  --accent-light: 198 24% 66%;
+  --accent-hex: #547792;
+  
+  /* Background Colors - Clean White */
+  --bg: #ffffff;
+  --bg-dark: #f8fafc;
+  --surface: #ffffff;
+  
+  /* Text Colors */
+  --text-main: #213448;
+  --text-secondary: #547792;
+  --text-muted: #94B4C1;
+  --text-inverse: #ffffff;
+  
+  /* Border & UI */
+  --border: #e2e8f0;
+  --border-color: #e2e8f0;
+  --input-bg: rgba(255, 255, 255, 0.95);
+  
+  /* Status Colors */
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --info: #547792;
+
+  /* Contextual Action Colors */
+  --action-primary: #4f6ef7;
+  --action-primary-hover: #3b5de5;
+  --action-primary-bg: rgba(79, 110, 247, 0.1);
+  --action-success: #34d399;
+  --action-success-hover: #10b981;
+  --action-success-bg: rgba(52, 211, 153, 0.1);
+  --action-warning: #fbbf24;
+  --action-warning-hover: #f59e0b;
+  --action-warning-bg: rgba(251, 191, 36, 0.1);
+  --action-danger: #f87171;
+  --action-danger-hover: #ef4444;
+  --action-danger-bg: rgba(248, 113, 113, 0.1);
+  
+  /* Shadows - Premium */
+  --shadow-sm: 0 1px 3px rgba(33, 52, 72, 0.04);
+  --shadow-md: 0 4px 12px rgba(33, 52, 72, 0.08);
+  --shadow-lg: 0 12px 32px rgba(33, 52, 72, 0.12);
+  --shadow-glow: 0 0 40px rgba(33, 52, 72, 0.08);
+  
+  /* Glassmorphism */
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  --glass-blur: 20px;
+  
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-pill: 50px;
+  
+  /* Typography */
+  --font-family: 'Inter', 'Manrope', 'Cairo', sans-serif;
+  
+  /* Transitions */
+  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-fast: all 0.15s ease;
+  --transition-spring: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Modal Theme Tokens - Light Mode */
+  --modal-bg: #ffffff;
+  --modal-bg-secondary: #f8fafc;
+  --modal-surface: #f1f5f9;
+  --modal-border: #e2e8f0;
+  --modal-shadow: 0 24px 64px rgba(33, 52, 72, 0.18), 0 8px 24px rgba(33, 52, 72, 0.08);
+  --modal-text: #1e293b;
+  --modal-text-secondary: #64748b;
+  --modal-text-muted: #94a3b8;
+
+  /* Status Colors - Light Mode (deep, legible) */
+  --status-active: #059669;
+  --status-active-bg: rgba(5, 150, 105, 0.1);
+  --status-inactive: #dc2626;
+  --status-inactive-bg: rgba(220, 38, 38, 0.1);
+  --status-performance: #059669;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-family);
+  background-color: var(--bg);
+  color: var(--text-main);
+  transition: var(--transition);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body.dark-theme {
+  --primary: 206 28% 45%;
+  --primary-dark: 211 36% 21%;
+  --primary-light: 198 24% 66%;
+  --primary-hex: #547792;
+  --accent: 198 24% 66%;
+  --accent-light: 206 28% 45%;
+  --accent-hex: #94B4C1;
+  --bg: #0f172a;
+  --bg-dark: #0c1322;
+  --surface: #1e293b;
+  --text-main: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-inverse: #ffffff;
+  --border: #334155;
+  --border-color: #334155;
+  --input-bg: rgba(255, 255, 255, 0.06);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 40px rgba(100, 150, 200, 0.1);
+  --glass-bg: rgba(30, 41, 59, 0.7);
+  --glass-border: rgba(71, 85, 105, 0.4);
+
+  /* Modal Theme Tokens - Dark Mode */
+  --modal-bg: #1e293b;
+  --modal-bg-secondary: #0f172a;
+  --modal-surface: #334155;
+  --modal-border: #475569;
+  --modal-shadow: 0 24px 64px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.3);
+  --modal-text: #f1f5f9;
+  --modal-text-secondary: #cbd5e1;
+  --modal-text-muted: #94a3b8;
+
+  /* Status Colors - Dark Mode (vibrant neon) */
+  --status-active: #34d399;
+  --status-active-bg: rgba(52, 211, 153, 0.15);
+  --status-inactive: #f87171;
+  --status-inactive-bg: rgba(248, 113, 113, 0.15);
+  --status-performance: #34d399;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   DARK MODE FILTER BAR STYLES - STRICT CONTRAST RULES
+   ════════════════════════════════════════════════════════════════ */
+
+/* Filter Bar Container */
+body.dark-theme .filter-bar-container {
+  background-color: var(--surface) !important;
+  border-color: var(--border) !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   RULE 1: #94B4C1 Background = DARK TEXT (#213448)
+   ───────────────────────────────────────────────────────────────── */
+
+/* MUI Inputs with light background */
+body.dark-theme .filter-input .MuiOutlinedInput-root,
+body.dark-theme .filter-select .MuiOutlinedInput-root {
+  background-color: #94B4C1 !important;
+  color: #213448 !important;
+}
+
+body.dark-theme .filter-input .MuiOutlinedInput-input,
+body.dark-theme .filter-select .MuiSelect-select,
+body.dark-theme .filter-select .MuiSelect-icon {
+  color: #213448 !important;
+}
+
+body.dark-theme .filter-input .MuiOutlinedInput-input::placeholder {
+  color: #547792 !important;
+  opacity: 1 !important;
+  -webkit-text-fill-color: #547792 !important;
+}
+
+body.dark-theme .filter-input .MuiOutlinedInput-notchedOutline,
+body.dark-theme .filter-select .MuiOutlinedInput-notchedOutline {
+  border-color: #94B4C1 !important;
+}
+
+body.dark-theme .filter-input .MuiInputLabel-root,
+body.dark-theme .filter-select .MuiInputLabel-root {
+  color: #213448 !important;
+}
+
+/* MUI Buttons with light background - STRICT */
+body.dark-theme .filter-button,
+body.dark-theme .filter-button.MuiButton-root,
+body.dark-theme .filter-button.MuiButton-outlined,
+body.dark-theme button.filter-button {
+  background-color: #94B4C1 !important;
+  color: #213448 !important;
+  border-color: #94B4C1 !important;
+}
+
+body.dark-theme .filter-button:hover,
+body.dark-theme .filter-button.MuiButton-root:hover {
+  background-color: #7a9aad !important;
+  color: #213448 !important;
+}
+
+/* Filter button icon color */
+body.dark-theme .filter-button svg,
+body.dark-theme .filter-button .MuiButton-startIcon,
+body.dark-theme .filter-button .MuiButton-startIcon svg {
+  color: #213448 !important;
+  fill: #213448 !important;
+}
+
+/* Tailwind Filter Controls (Analytics page selects/inputs) */
+body.dark-theme .filter-control,
+body.dark-theme select.filter-control,
+body.dark-theme input.filter-control {
+  background-color: #94B4C1 !important;
+  color: #213448 !important;
+  border-color: #94B4C1 !important;
+  -webkit-text-fill-color: #213448 !important;
+}
+
+body.dark-theme .filter-control::placeholder {
+  color: #547792 !important;
+  -webkit-text-fill-color: #547792 !important;
+}
+
+body.dark-theme .filter-control option {
+  background-color: #94B4C1 !important;
+  color: #213448 !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   RULE 2: #213448 Background = WHITE TEXT
+   ───────────────────────────────────────────────────────────────── */
+
+body.dark-theme .dark-bg-button,
+body.dark-theme .dark-bg-button.MuiButton-root {
+  background-color: #213448 !important;
+  color: #ffffff !important;
+}
+
+body.dark-theme .dark-bg-button svg {
+  color: #ffffff !important;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   GLOBAL CURSOR & HOVER RULES
+   ════════════════════════════════════════════════════════════════ */
+
+/* All stat cards, numbers, labels = arrow cursor, not text selector */
+.MuiCard-root,
+.MuiTypography-root,
+.stat-card,
+[class*="StatCard"],
+.MuiTableCell-root:not([contenteditable="true"]) {
+  cursor: default;
+}
+
+/* Clickable elements keep pointer */
+button, a, [role="button"], [role="tab"], [role="menuitem"],
+.nav-item, .user-card, .MuiIconButton-root, .MuiButton-root,
+.MuiSwitch-root, .MuiSlider-root, .MuiSelect-select,
+input, textarea, select, label[for] {
+  cursor: pointer;
+}
+
+/* Input fields use text cursor */
+input[type="text"], input[type="email"], input[type="password"],
+input[type="search"], input[type="url"], input[type="tel"],
+input[type="number"], textarea,
+.MuiInputBase-input {
+  cursor: text !important;
+}
+
+/* Stat cards subtle hover effect */
+.MuiCard-root {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SETTINGS PAGE — DARK MODE LEGIBILITY
+   ════════════════════════════════════════════════════════════════ */
+
+/* Settings content area */
+body.dark-theme .settings-content {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+}
+
+/* Settings sidebar tabs */
+body.dark-theme .settings-sidebar {
+  background: rgba(15, 23, 42, 0.8) !important;
+  border-color: #334155 !important;
+}
+
+/* MUI Inputs in dark mode settings */
+body.dark-theme .MuiOutlinedInput-root {
+  background: rgba(30, 41, 59, 0.8) !important;
+  border-color: #334155;
+}
+
+body.dark-theme .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline {
+  border-color: #475569 !important;
+}
+
+body.dark-theme .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+  border-color: #6366f1 !important;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+body.dark-theme .MuiOutlinedInput-input {
+  color: #f1f5f9 !important;
+}
+
+body.dark-theme .MuiInputLabel-root {
+  color: #94a3b8 !important;
+}
+
+body.dark-theme .MuiInputLabel-root.Mui-focused {
+  color: #818cf8 !important;
+}
+
+/* Slider dark mode */
+body.dark-theme .MuiSlider-rail {
+  opacity: 0.25 !important;
+}
+
+/* Switch dark mode */
+body.dark-theme .MuiSwitch-track {
+  background-color: #475569 !important;
+}
+
+/* Select dropdown dark mode */
+body.dark-theme .MuiSelect-select {
+  color: #f1f5f9 !important;
+}
+
+body.dark-theme .MuiSelect-icon {
+  color: #94a3b8 !important;
+}
+
+/* Divider in dark mode */
+body.dark-theme .MuiDivider-root {
+  border-color: #334155 !important;
+}
+
+/* ────────────────────────────────────────────────
+   Global Loading Spinner (3 pulsing dots)
+   ──────────────────────────────────────────────── */
+.loading {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  align-items: center;
+}
+
+.loading span {
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  animation: pulse 1.4s infinite ease-in-out;
+}
+
+.loading span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.loading span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes pulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+
+  40% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   GLOBAL MODAL STYLES — Deep Blur, Minimal Scrollbar, Focus
+   ════════════════════════════════════════════════════════════════ */
+
+/* Deep blur backdrop for all MUI modals */
+.MuiModal-backdrop {
+  backdrop-filter: blur(16px) saturate(1.2) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(1.2) !important;
+  background: rgba(15, 23, 42, 0.55) !important;
+}
+
+body.dark-theme .MuiModal-backdrop {
+  background: rgba(0, 0, 0, 0.65) !important;
+}
+
+/* Ultra-thin minimalist scrollbar for modal content */
+.modal-scroll::-webkit-scrollbar {
+  width: 3px;
+}
+.modal-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.modal-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 99px;
+}
+.modal-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Firefox scrollbar */
+.modal-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* Ghost Badge Utility Classes */
+.ghost-badge-success {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 50px;
+  display: inline-block;
+}
+.ghost-badge-warning {
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 50px;
+  display: inline-block;
+}
+.ghost-badge-error {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 50px;
+  display: inline-block;
+}
+
+/* ── Agent Config Buttons ── */
+.agent-config-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 0;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  background: transparent;
+  transition: all 200ms ease-in-out;
+}
+
+.agent-config-btn--edit {
+  border-color: var(--primary-hex);
+  color: var(--primary-hex);
+}
+.agent-config-btn--edit:hover {
+  background: rgba(33, 52, 72, 0.08);
+  box-shadow: 0 2px 12px rgba(33, 52, 72, 0.12);
+  transform: translateY(-1px);
+}
+.agent-config-btn--edit:active {
+  transform: translateY(0);
+  background: rgba(33, 52, 72, 0.14);
+}
+
+.agent-config-btn--delete {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.agent-config-btn--delete:hover {
+  background: rgba(239, 68, 68, 0.08);
+  box-shadow: 0 2px 12px rgba(239, 68, 68, 0.12);
+  transform: translateY(-1px);
+}
+.agent-config-btn--delete:active {
+  transform: translateY(0);
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.agent-config-btn--cancel {
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+.agent-config-btn--cancel:hover {
+  background: var(--bg-dark);
+  border-color: var(--text-muted);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+}
+.agent-config-btn--cancel:active {
+  transform: translateY(0);
+}
+
+.agent-config-btn--save {
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  color: #ffffff;
+  border: none;
+  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.25);
+  font-weight: 700;
+}
+.agent-config-btn--save:hover {
+  background: linear-gradient(135deg, #047857 0%, #059669 100%);
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.35);
+  transform: translateY(-1px);
+}
+.agent-config-btn--save:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.3);
+}
+
+body.dark-theme .agent-config-btn--edit {
+  border-color: var(--accent-hex);
+  color: var(--accent-hex);
+}
+body.dark-theme .agent-config-btn--edit:hover {
+  background: rgba(84, 119, 146, 0.15);
+  box-shadow: 0 2px 12px rgba(84, 119, 146, 0.2);
+}
+body.dark-theme .agent-config-btn--delete:hover {
+  background: rgba(239, 68, 68, 0.12);
+}
+body.dark-theme .agent-config-btn--cancel:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   DARK MODE FIXES
+   ════════════════════════════════════════════════════════════════ */
+
+/* 1. Admin Archive: search bar & filters → white background in dark mode */
+body.dark-theme .filter-bar-container {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+body.dark-theme .filter-bar-container .MuiTypography-root,
+body.dark-theme .filter-bar-container .MuiInputLabel-root,
+body.dark-theme .filter-bar-container .MuiOutlinedInput-input,
+body.dark-theme .filter-bar-container .MuiSelect-select,
+body.dark-theme .filter-bar-container .filter-button {
+  color: #213448 !important;
+}
+body.dark-theme .filter-bar-container .MuiOutlinedInput-root {
+  background-color: #f8fafc !important;
+}
+body.dark-theme .filter-bar-container .MuiOutlinedInput-notchedOutline {
+  border-color: #e2e8f0 !important;
+}
+body.dark-theme .filter-bar-container .filter-button {
+  border-color: #cbd5e1 !important;
+  background-color: #f8fafc !important;
+}
+
+/* 2. Admin Dashboard: three-dots options icon → white in dark mode */
+body.dark-theme .MuiTableCell-root .MuiIconButton-root .fa-ellipsis-vertical {
+  color: #f1f5f9 !important;
+}
+
+/* 3. Admin Archive Options: info icon → accent, delete icon → red in dark mode */
+body.dark-theme .MuiTableCell-root .MuiIconButton-colorSecondary svg,
+body.dark-theme .MuiTableCell-root .MuiIconButton-colorSecondary .svg-inline--fa {
+  color: var(--accent-hex) !important;
+}
+body.dark-theme .MuiTableCell-root .MuiIconButton-colorError svg,
+body.dark-theme .MuiTableCell-root .MuiIconButton-colorError .svg-inline--fa {
+  color: #ef4444 !important;
+}
+
+/* 3. Inject box card → match glassmorphism cards in dark mode */
+body.dark-theme .inject-box {
+  background: var(--glass-bg) !important;
+  border-color: var(--glass-border) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), 0 1px 0 rgba(255, 255, 255, 0.05) inset !important;
+}
