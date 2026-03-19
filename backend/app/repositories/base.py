@@ -35,7 +35,19 @@ class BaseRepository(Generic[T]):
         """
         self.table_name = table_name
         self.model_class = model_class
-        self.client = client or get_supabase_client()
+        self._static_client = client
+
+    @property
+    def client(self) -> Client:
+        """
+        Dynamically fetch the client so it respects request-scoped ContextVars.
+        This prevents older singletons from holding onto global anon clients when a 
+        secure token is active.
+        """
+        if self._static_client:
+            return self._static_client
+        from app.db.supabase import get_supabase_client
+        return get_supabase_client()
 
     def get_all(self, skip: int = 0, limit: int = 100) -> list[T]:
         """

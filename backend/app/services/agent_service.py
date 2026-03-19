@@ -44,7 +44,7 @@ def create_agent(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create agent: {str(e)}",
+            detail="An internal database error occurred while creating the agent.",
         )
 
     return created_agent
@@ -135,7 +135,7 @@ def update_agent(
     except Exception as e:
          raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update agent: {str(e)}",
+            detail="An internal database error occurred while updating the agent.",
         )
 
     return updated_agent
@@ -164,5 +164,5 @@ def delete_agent(agent_id: UUID, supervisor_id: UUID) -> None:
             
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete agent: {str(e)}",
+            detail="An internal database error occurred while deleting the agent.",
         )

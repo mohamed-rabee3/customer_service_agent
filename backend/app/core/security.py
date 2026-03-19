@@ -79,8 +79,9 @@ async def get_current_user(
     user_uuid = UUID(user_id_str)
     display_name = _extract_display_name(getattr(user_data, "user_metadata", None), user_data.email or "")
 
-    # Set user's JWT for RLS enforcement on subsequent queries
-    supabase.postgrest.auth(token)
+    # Authenticate the user safely in the request context variable
+    from app.db.supabase import request_jwt
+    request_jwt.set(token)
 
     # Check admin role (RLS: admin can see their own row)
     admin_result = (
