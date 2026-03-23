@@ -71,3 +71,6 @@ backend/.env.local
 # Documentation
 /docs
 
+# Node.js
+node_modules/
+**/node_modules/
