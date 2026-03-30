@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # CORS Configuration
-    cors_origins: str = "http://localhost:5173,http://localhost:3000"
+    cors_origins: str = "*"
 
     # LiveKit Configuration
     livekit_url: str = ""

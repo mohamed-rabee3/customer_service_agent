@@ -24,7 +24,7 @@ class Archive(BaseModel):
     summary: str | None = None
     issues: dict[str, Any] | None = None  # JSON field
     tags: dict[str, Any] | None = None  # JSON field
-    call_source_ID: str | None = None  # chat: chatID, voice: livekit_room_id
+    call_source_id: str | None = None  # chat: chatID, voice: livekit_room_id
     csat_score: float | None = None
     resolution_time_sec: int | None = None
     fcr_status: bool | None = None  # First Contact Resolution status
