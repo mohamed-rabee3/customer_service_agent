@@ -2,14 +2,16 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Eye, MessageSquare, X, Circle, TrendingUp, Smile, Info, Send } from 'lucide-react';
 import { toast } from 'react-toastify';
 import AgentAvatar from './AgentAvatar';
+import { chatAPI } from '@/services/chatService';
 
 interface ChatAgent {
-  id: number;
+  id: string;
   name: string;
   status: 'active' | 'idle';
   sentiment: string;
   performance: string;
   feed: string;
+  session_id?: string;
 }
 
 interface ChatDetailModalProps {
@@ -34,10 +36,50 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({ agent, onClose }) => 
   }, [agent?.id]);
 
   useEffect(() => {
-    if (!agent) return;
+    if (!agent || !agent.session_id) return;
     setFeedLines([]);
-    // Connection to live chat feed will go here
-  }, [agent?.id]);
+
+    // Connect to SSE live feed
+    let eventSource: EventSource | null = null;
+    const connect = async () => {
+      eventSource = await chatAPI.streamSession(agent.session_id!);
+      if (!eventSource) return;
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'message' && data.data) {
+            setFeedLines(prev => [...prev, {
+              speaker: data.data.role === 'agent' ? 'Agent' : 'Customer',
+              text: data.data.content,
+            }]);
+          } else if (data.type === 'whisper' && data.data) {
+            setFeedLines(prev => [...prev, {
+              speaker: 'Supervisor',
+              text: data.data.content,
+            }]);
+          } else if (data.type === 'metrics' && data.data) {
+            // metrics received — could update parent in future
+          } else if (data.type === 'session_ended') {
+            setFeedLines(prev => [...prev, {
+              speaker: 'System',
+              text: 'Session ended.',
+            }]);
+            eventSource?.close();
+          }
+        } catch { /* ignore parse errors */ }
+      };
+
+      eventSource.onerror = () => {
+        eventSource?.close();
+      };
+    };
+    connect();
+
+    return () => {
+      eventSource?.close();
+    };
+  }, [agent?.id, agent?.session_id]);
 
   useEffect(() => {
     if (feedRef.current) feedRef.current.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' });
@@ -52,10 +94,19 @@ const ChatDetailModal: React.FC<ChatDetailModalProps> = ({ agent, onClose }) => 
     setTimeout(() => { setIsExiting(false); onClose(); }, 280);
   }, [onClose]);
 
-  const handleWhisperSend = () => {
+  const handleWhisperSend = async () => {
     if (!whisperText.trim()) { toast.warn('Please enter a message'); return; }
+    if (!agent?.session_id) { toast.warn('No active session to whisper into'); return; }
     setIsSendingWhisper(true);
-    setTimeout(() => { toast.success(`Message sent to ${agent?.name}: "${whisperText.trim()}"`); setWhisperText(''); setIsSendingWhisper(false); }, 600);
+    try {
+      await chatAPI.whisper(agent.session_id, whisperText.trim());
+      toast.success(`Message sent to ${agent?.name}: "${whisperText.trim()}"`);
+      setWhisperText('');
+    } catch (err) {
+      toast.error('Failed to send whisper');
+    } finally {
+      setIsSendingWhisper(false);
+    }
   };
 
   if (!agent) return null;

@@ -1,9 +1,9 @@
 """Agent endpoints - Router layer for agent API."""
 
-from typing import Annotated
+from typing import Annotated, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.api.v1.schemas.agent import (
     AgentCreateResponse,
@@ -19,6 +19,30 @@ from app.core.security import get_current_user
 from app.services import agent_service
 
 router = APIRouter(prefix="/agents", tags=["Agents"])
+
+
+@router.get(
+    "",
+    response_model=list[AgentResponse],
+    summary="List agents",
+    description="List all agents for the current supervisor. Admins see all agents. Optionally filter by type.",
+)
+async def list_agents(
+    current_user: Annotated[UserResponse, Depends(get_current_user)],
+    agent_type: Optional[str] = Query(None, description="Filter by agent type: 'voice' or 'chat'"),
+) -> list[AgentResponse]:
+    """
+    List all agents belonging to the current supervisor.
+
+    Raises:
+        401: Not authenticated
+    """
+    agents = agent_service.list_agents(
+        supervisor_id=current_user.id,
+        role=current_user.role,
+        agent_type=agent_type,
+    )
+    return [AgentResponse.model_validate(a.model_dump()) for a in agents]
 
 
 @router.post(

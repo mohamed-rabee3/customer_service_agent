@@ -2,7 +2,10 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import admin, agents, analytics, archives, auth, interactions, supervisors, tools
+from app.api.v1.endpoints import (
+    admin, agents, analytics, archives, auth,
+    chat, chat_sse, interactions, supervisors, tools,
+)
 
 api_router = APIRouter()
 
@@ -15,3 +18,5 @@ api_router.include_router(interactions.router, prefix="/interactions", tags=["In
 api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 api_router.include_router(tools.router)
+api_router.include_router(chat.router)
+api_router.include_router(chat_sse.router)

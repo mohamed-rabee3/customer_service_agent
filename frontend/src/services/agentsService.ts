@@ -7,6 +7,9 @@ export interface AgentPayload {
 }
 
 export const agentsAPI = {
+  getAll: (agentType?: string) =>
+    api.get(`/agents${agentType ? `?agent_type=${agentType}` : ''}`),
+
   create: (data: AgentPayload) =>
     api.post('/agents', data),
 

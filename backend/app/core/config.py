@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     groq_api_key: str = ""
 
+    # OpenRouter Configuration
+    openrouter_api_key: str = ""
+    openrouter_model: str = "qwen/qwen3-235b-a22b:free"
+
     @property
     def cors_origins_list(self) -> list[str]:
         """Parse CORS origins string into list."""

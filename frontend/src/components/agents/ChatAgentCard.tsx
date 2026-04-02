@@ -3,12 +3,13 @@ import { MessageSquare } from 'lucide-react';
 import AgentAvatar from './AgentAvatar';
 
 interface ChatAgent {
-  id: number;
+  id: string;
   name: string;
   status: 'active' | 'idle';
   sentiment: string;
   performance: string;
   feed: string;
+  session_id?: string;
 }
 
 interface ChatAgentCardProps {

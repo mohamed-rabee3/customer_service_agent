@@ -1,17 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Card, Typography } from '@mui/material';
 import ChatAgentCard from '@/components/agents/ChatAgentCard';
 import ChatDetailModal from '@/components/agents/ChatDetailModal';
 import InjectBox from '@/components/agents/InjectBox';
 import '@/components/agents/VoiceAgentSelector.css';
+import { agentsAPI } from '@/services/agentsService';
+import { chatAPI } from '@/services/chatService';
 
 interface ChatAgent {
-  id: number;
+  id: string;
   name: string;
   status: 'active' | 'idle';
   sentiment: string;
   performance: string;
   feed: string;
+  session_id?: string;
 }
 
 /* Glassmorphism card — same DNA as AdminDashboard */
@@ -34,12 +37,53 @@ const glassCardSx = {
 
 const ChatMonitoring: React.FC = () => {
   const [selectedAgent, setSelectedAgent] = useState<ChatAgent | null>(null);
+  const [agents, setAgents] = useState<ChatAgent[]>([]);
 
-  const [agents] = useState<ChatAgent[]>([
-    { id: 1, name: 'Agent 1', status: 'active', sentiment: 'good', performance: '80%', feed: 'Customer asked about pricing.' },
-    { id: 2, name: 'Agent 2', status: 'active', sentiment: 'neutral', performance: '85%', feed: 'Explaining the subscription plan.' },
-    { id: 3, name: 'Agent 3', status: 'active', sentiment: 'good', performance: '80%', feed: 'Helping with password reset.' },
-  ]);
+  useEffect(() => {
+    const fetchAgents = async () => {
+      try {
+        // 1. Fetch chat agents from backend
+        const agentsRes = await agentsAPI.getAll('chat');
+        const rawAgents = agentsRes.data || [];
+
+        // 2. Fetch active sessions to get live metrics
+        let activeSessions: any[] = [];
+        try {
+          const sessionsRes = await chatAPI.getActiveSessions();
+          activeSessions = sessionsRes.data || [];
+        } catch { /* no active sessions */ }
+
+        // 3. Build session lookup: agent_id → session data
+        const sessionMap = new Map<string, any>();
+        for (const s of activeSessions) {
+          sessionMap.set(s.agent_id, s);
+        }
+
+        // 4. Map to ChatAgent interface
+        const mapped: ChatAgent[] = rawAgents.map((a: any) => {
+          const session = sessionMap.get(a.id);
+          const isActive = a.status === 'in_chat';
+          return {
+            id: a.id,
+            name: a.name,
+            status: isActive ? 'active' : 'idle',
+            sentiment: 'neutral',
+            performance: '-',
+            feed: session ? `${session.message_count} messages` : 'No active session',
+            session_id: session?.session_id,
+          };
+        });
+
+        setAgents(mapped);
+      } catch (err) {
+        console.error('Failed to fetch chat agents', err);
+      }
+    };
+
+    fetchAgents();
+    const interval = setInterval(fetchAgents, 10000); // refresh every 10s
+    return () => clearInterval(interval);
+  }, []);
 
   const totalActive = agents.filter(a => a.status === 'active').length;
   const avgPerf = Math.round(agents.reduce((acc, a) => acc + parseInt(a.performance), 0) / agents.length);

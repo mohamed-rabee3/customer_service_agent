@@ -14,6 +14,26 @@ from app.core.exceptions import (
 from app.repositories.agent_repository import AgentModel, agent_repository
 
 
+def list_agents(
+    supervisor_id: UUID,
+    role: str,
+    agent_type: str | None = None,
+) -> list[AgentModel]:
+    """
+    List agents. Supervisors see their own, admins see all.
+    Optionally filter by agent_type ('voice' or 'chat').
+    """
+    if role == "admin":
+        agents = agent_repository.get_all()
+    else:
+        agents = agent_repository.get_by_supervisor(supervisor_id)
+
+    if agent_type:
+        agents = [a for a in agents if a.agent_type.value == agent_type]
+
+    return agents
+
+
 def create_agent(
     supervisor_id: UUID,
     request: CreateAgentRequest,

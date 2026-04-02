@@ -3,11 +3,13 @@ import { createPortal } from 'react-dom';
 import { Send, ChevronDown, Check } from 'lucide-react';
 import { toast } from 'react-toastify';
 import AgentAvatar from './AgentAvatar';
+import { chatAPI } from '@/services/chatService';
 
 interface Agent {
-  id: number;
+  id: string;
   name: string;
   status: string;
+  session_id?: string;
 }
 
 interface InjectBoxProps {
@@ -65,17 +67,26 @@ const InjectBox: React.FC<InjectBoxProps> = ({ agents, label = 'inject' }) => {
     return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
   }, [menuOpen]);
 
-  const handleInject = () => {
+  const handleInject = async () => {
     if (!text.trim()) { toast.warn('Please enter a message first'); return; }
+    const selectedAgent = agents.find(a => a.name === selectedAgentName);
+    if (!selectedAgent?.session_id) {
+      toast.warn(`${selectedAgentName} has no active chat session`);
+      return;
+    }
     setIsSending(true);
-    setTimeout(() => {
+    try {
+      await chatAPI.whisper(selectedAgent.session_id, text.trim());
       setIsSending(false);
       setIsSuccess(true);
       setIsVaporizing(true);
       toast.success(`Sent to ${selectedAgentName}: "${text.trim()}"`);
       setTimeout(() => { setText(''); setIsVaporizing(false); }, 500);
       setTimeout(() => setIsSuccess(false), 1200);
-    }, 900);
+    } catch (err) {
+      setIsSending(false);
+      toast.error('Failed to send instruction');
+    }
   };
 
   const dropdownMenu = menuOpen ? createPortal(
