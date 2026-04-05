@@ -11,7 +11,6 @@ from sse_starlette.sse import EventSourceResponse
 from app.agents.agent_runner import AgentRunner
 from app.api.deps import get_current_user
 from app.api.v1.schemas.auth import UserResponse
-from app.core.security import verify_token
 
 logger = logging.getLogger(__name__)
 

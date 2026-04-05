@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     admin, agents, analytics, archives, auth,
     chat, chat_sse, interactions, supervisors, tools,
+    webhooks
 )
 
 api_router = APIRouter()
@@ -20,3 +21,4 @@ api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 api_router.include_router(tools.router)
 api_router.include_router(chat.router)
 api_router.include_router(chat_sse.router)
+api_router.include_router(webhooks.router)

@@ -22,6 +22,7 @@ class AgentModel(BaseModel):
     agent_type: AgentType
     system_prompt: str
     status: AgentStatus
+    telegram_bot_token: str | None = None
     mcp_tools: dict[str, Any]
     created_at: datetime
     updated_at: datetime
@@ -67,6 +68,7 @@ class AgentRepository(BaseRepository[AgentModel]):
         name: str,
         system_prompt: str,
         mcp_tools: dict[str, Any],
+        telegram_bot_token: str | None = None,
         agent_type: AgentType = AgentType.VOICE,
     ) -> AgentModel:
         """
@@ -87,6 +89,7 @@ class AgentRepository(BaseRepository[AgentModel]):
             "agent_type": agent_type.value,
             "system_prompt": system_prompt,
             "status": AgentStatus.IDLE.value,
+            "telegram_bot_token": telegram_bot_token,
             "mcp_tools": mcp_tools,
             "created_at": now,
             "updated_at": now,

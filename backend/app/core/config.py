@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_model: str = "qwen/qwen3-235b-a22b:free"
 
+    # Telegram Bot Configuration
+    telegram_bot_token: str = ""
+
     @property
     def cors_origins_list(self) -> list[str]:
         """Parse CORS origins string into list."""

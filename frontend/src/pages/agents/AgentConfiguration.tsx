@@ -12,6 +12,7 @@ interface Agent {
     name: string;
     agent_type: 'voice' | 'chat';
     system_prompt: string;
+    telegram_bot_token?: string;
     status: string;
     mcp_tools: Record<string, any>;
 }
@@ -159,8 +160,8 @@ const AddAgentCard: React.FC<{ index: number; onClick: () => void }> = ({ index,
 interface FormModalProps {
     open: boolean;
     title: string;
-    formData: { name: string; system_prompt: string; };
-    onChange: (data: { name: string; system_prompt: string; }) => void;
+    formData: { name: string; system_prompt: string; telegram_bot_token?: string; };
+    onChange: (data: { name: string; system_prompt: string; telegram_bot_token?: string; }) => void;
     onSubmit: () => void;
     onClose: () => void;
     submitLabel: string;
@@ -234,6 +235,21 @@ const AgentFormModal: React.FC<FormModalProps> = ({ open, title, formData, onCha
                             }}
                         />
                     </div>
+                    <div>
+                        <label className="text-xs font-semibold uppercase tracking-widest mb-1 block" style={{ color: 'var(--text-muted)' }}>Telegram Bot Token (Optional)</label>
+                        <input
+                            type="text"
+                            value={formData.telegram_bot_token || ''}
+                            onChange={(e) => onChange({ ...formData, telegram_bot_token: e.target.value })}
+                            className="w-full px-4 py-3 rounded-xl border outline-none"
+                            style={{
+                                backgroundColor: 'var(--bg-dark)',
+                                borderColor: 'var(--border)',
+                                color: 'var(--text-main)',
+                            }}
+                            placeholder="e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+                        />
+                    </div>
                 </div>
 
                 <div className="flex gap-3 mt-6">
@@ -258,9 +274,9 @@ const AgentConfiguration: React.FC = () => {
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
-    const [formData, setFormData] = useState({ name: '', system_prompt: '' });
+    const [formData, setFormData] = useState({ name: '', system_prompt: '', telegram_bot_token: '' });
 
-    const resetForm = () => setFormData({ name: '', system_prompt: '' });
+    const resetForm = () => setFormData({ name: '', system_prompt: '', telegram_bot_token: '' });
 
     // Fetch agents from the supervisor dashboard endpoint
     const fetchAgents = async () => {
@@ -270,11 +286,12 @@ const AgentConfiguration: React.FC = () => {
             if (dashboard.agents && Array.isArray(dashboard.agents)) {
                 setAgents(dashboard.agents.map((a: Record<string, unknown>) => ({
                     id: a.id,
-                    name: a.name,
-                    agent_type: a.agent_type,
-                    system_prompt: a.system_prompt || '',
-                    status: a.status,
-                    mcp_tools: a.mcp_tools || {},
+                    name: a.name as string,
+                    agent_type: a.agent_type as 'voice' | 'chat',
+                    system_prompt: a.system_prompt as string || '',
+                    telegram_bot_token: a.telegram_bot_token as string || '',
+                    status: a.status as string,
+                    mcp_tools: a.mcp_tools as Record<string, any> || {},
                 })));
             }
         } catch (err: unknown) {
@@ -292,7 +309,11 @@ const AgentConfiguration: React.FC = () => {
         if (!formData.system_prompt.trim()) { toast.warn('Please enter a system prompt'); return; }
         setSaving(true);
         try {
-            await agentsAPI.create({ name: formData.name, system_prompt: formData.system_prompt });
+            await agentsAPI.create({ 
+                name: formData.name, 
+                system_prompt: formData.system_prompt, 
+                telegram_bot_token: formData.telegram_bot_token 
+            });
             toast.success('Agent created successfully');
             setAddModalOpen(false);
             resetForm();
@@ -309,9 +330,17 @@ const AgentConfiguration: React.FC = () => {
         // Fetch full detail to get system_prompt
         try {
             const res = await agentsAPI.getById(agent.id);
-            setFormData({ name: res.data.name, system_prompt: res.data.system_prompt || '' });
+            setFormData({ 
+                name: res.data.name, 
+                system_prompt: res.data.system_prompt || '',
+                telegram_bot_token: res.data.telegram_bot_token || ''
+            });
         } catch {
-            setFormData({ name: agent.name, system_prompt: agent.system_prompt });
+            setFormData({ 
+                name: agent.name, 
+                system_prompt: agent.system_prompt,
+                telegram_bot_token: agent.telegram_bot_token || ''
+            });
         }
         setEditModalOpen(true);
     };
@@ -322,7 +351,11 @@ const AgentConfiguration: React.FC = () => {
         if (!formData.system_prompt.trim()) { toast.warn('Please enter a system prompt'); return; }
         setSaving(true);
         try {
-            await agentsAPI.update(selectedAgent.id, { name: formData.name, system_prompt: formData.system_prompt });
+            await agentsAPI.update(selectedAgent.id, { 
+                name: formData.name, 
+                system_prompt: formData.system_prompt,
+                telegram_bot_token: formData.telegram_bot_token
+            });
             toast.success('Agent updated successfully');
             setEditModalOpen(false);
             setSelectedAgent(null);

@@ -59,6 +59,7 @@ def create_agent(
             name=request.name,
             system_prompt=request.system_prompt,
             mcp_tools=request.mcp_tools,
+            telegram_bot_token=request.telegram_bot_token,
             agent_type=agent_type,
         )
     except Exception as e:

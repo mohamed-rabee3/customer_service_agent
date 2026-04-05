@@ -16,6 +16,7 @@ class CreateAgentRequest(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=255, description="Agent name")
     system_prompt: str = Field(..., min_length=1, description="System instructions for the agent")
+    telegram_bot_token: str | None = Field(None, description="Telegram Bot Token for Webhooks")
     mcp_tools: dict[str, Any] = Field(default_factory=dict, description="MCP tools JSON configuration")
 
     @field_validator("mcp_tools", mode="before")
@@ -36,6 +37,7 @@ class UpdateAgentRequest(BaseModel):
 
     name: str | None = Field(None, min_length=1, max_length=255, description="Agent name")
     system_prompt: str | None = Field(None, min_length=1, description="System instructions for the agent")
+    telegram_bot_token: str | None = Field(None, description="Telegram Bot Token for Webhooks")
     mcp_tools: dict[str, Any] | None = Field(None, description="MCP tools JSON configuration")
 
     @field_validator("mcp_tools", mode="before")
@@ -60,6 +62,7 @@ class AgentResponse(BaseModel):
     agent_type: AgentType
     system_prompt: str
     status: AgentStatus
+    telegram_bot_token: str | None = None
     mcp_tools: dict[str, Any]
     created_at: datetime
     updated_at: datetime
@@ -75,6 +78,7 @@ class AgentCreateResponse(BaseModel):
     name: str
     agent_type: AgentType
     status: AgentStatus
+    telegram_bot_token: str | None = None
     mcp_tools: dict[str, Any]
     created_at: datetime
     updated_at: datetime
@@ -102,6 +106,7 @@ class AgentDetailResponse(BaseModel):
     agent_type: AgentType
     system_prompt: str
     status: AgentStatus
+    telegram_bot_token: str | None = None
     mcp_tools: dict[str, Any]
     created_at: datetime
     updated_at: datetime

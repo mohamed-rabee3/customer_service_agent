@@ -4,6 +4,7 @@ import api from './api';
 export interface AgentPayload {
   name: string;
   system_prompt?: string;
+  telegram_bot_token?: string;
 }
 
 export const agentsAPI = {
