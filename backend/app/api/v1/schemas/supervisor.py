@@ -76,12 +76,14 @@ class SupervisorCreate(BaseModel):
 
     email: str = Field(..., description="Email for auth user creation")
     password: str = Field(..., min_length=6, description="Password for auth user")
+    name: str = Field(default="", description="Supervisor's full name")
     supervisor_type: SupervisorType = Field(default=SupervisorType.VOICE, description="Supervisor type")
 
 
 class SupervisorUpdate(BaseModel):
     """Schema for updating a supervisor (admin only)."""
 
+    name: str | None = None
     supervisor_type: SupervisorType | None = None
     performance_score: float | None = None
     total_interactions: int | None = None

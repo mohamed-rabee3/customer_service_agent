@@ -5,6 +5,7 @@ export const supervisorsAPI = {
   create: (data: {
     email: string;
     password: string;
+    name: string;
     supervisor_type: 'voice' | 'chat';
   }) => api.post('/supervisors', data),
 
@@ -13,6 +14,7 @@ export const supervisorsAPI = {
   getById: (id: string) => api.get(`/supervisors/${id}`),
 
   update: (id: string, data: Partial<{
+    name?: string;
     supervisor_type: 'voice' | 'chat';
   }>) => api.put(`/supervisors/${id}`, data),
 

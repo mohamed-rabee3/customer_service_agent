@@ -34,6 +34,8 @@ import {
   faPhone,
   faHeadset,
   faEllipsisV,
+  faUserPlus,
+  faLock
 } from '@fortawesome/free-solid-svg-icons';
 
 // ─── Number Counter Hook ─────────────────────────────
@@ -273,7 +275,7 @@ const AdminDashboard: React.FC = () => {
   const handleEditSubmit = async (data: { name: string; type: 'voice' | 'chat'; email: string }) => {
     if (!selectedRow) return;
     try {
-      await supervisorsAPI.update(selectedRow.id, { supervisor_type: data.type });
+      await supervisorsAPI.update(selectedRow.id, { name: data.name, supervisor_type: data.type });
       setLeaderBoard(prev => prev.map(s => 
         s.id === selectedRow.id 
           ? { ...s, name: data.name, type: data.type === 'voice' ? 'Voice' : 'Chat' }
@@ -289,7 +291,7 @@ const AdminDashboard: React.FC = () => {
   const handleAddSubmit = async (data: { name: string; type: 'voice' | 'chat'; email: string }) => {
     setIsAdding(true);
     try {
-      const res = await supervisorsAPI.create({ email: data.email, password: 'TempPass123!', supervisor_type: data.type });
+      const res = await supervisorsAPI.create({ email: data.email, password: 'TempPass123!', name: data.name, supervisor_type: data.type });
       const newSup = res.data;
       const newLeaderboard: LeaderboardSupervisor = {
         id: newSup.id,
@@ -508,91 +510,161 @@ const AdminDashboard: React.FC = () => {
         </Box>
       </Box>
 
-      {/* ═══ Leaderboard ═══ */}
+      {/* ═══ Desktop Layout: Leaderboard & Access Requests ═══ */}
       {isAdmin && (
-        <>
-          <Typography variant="h5" fontWeight={600} color="var(--text-main)" sx={{ mt: 2, mb: 3 }}>
-            Leader Board
-          </Typography>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '7fr 3fr' }, gap: 4, mt: 2 }}>
+          {/* Left Column: Leaderboard */}
+          <Box>
+            <Typography variant="h5" fontWeight={600} color="var(--text-main)" sx={{ mb: 3 }}>
+              Leader Board
+            </Typography>
 
-          <TableContainer component={Paper} sx={{
-            borderRadius: 'var(--radius-lg)',
-            border: '1px solid var(--glass-border)',
-            boxShadow: '0 8px 32px rgba(33,52,72,0.06)',
-            background: 'var(--glass-bg)',
-            backdropFilter: 'blur(var(--glass-blur))',
-            WebkitBackdropFilter: 'blur(var(--glass-blur))',
-          }}>
-            <Table>
-              <TableHead>
-                <TableRow sx={{ bgcolor: 'transparent' }}>
-                  <TableCell sx={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Rank</TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Supervisor</TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Type</TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Monthly Calls</TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Performance</TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Avg Handle Time</TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Options</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {leaderBoard.map((row) => (
-                  <TableRow key={row.id} hover sx={{ transition: 'background 0.2s' }}>
-                    <TableCell>
-                      <Box sx={{
-                        width: 28, height: 28, borderRadius: '50%',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        background: row.rank <= 3 ? 'linear-gradient(135deg, var(--primary-hex), var(--accent-hex))' : 'rgba(84,119,146,0.1)',
-                        color: row.rank <= 3 ? '#fff' : 'var(--text-main)',
-                        fontWeight: 700, fontSize: 12,
-                      }}>
-                        {row.rank}
-                      </Box>
-                    </TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>{row.name}</TableCell>
-                    <TableCell>
-                      <Box sx={{
-                        display: 'inline-block', px: 1.5, py: 0.5,
-                        borderRadius: 'var(--radius-pill)',
-                        background: row.type === 'Voice' ? 'rgba(16,185,129,0.1)' : 'rgba(84,119,146,0.1)',
-                        color: row.type === 'Voice' ? 'var(--success)' : 'var(--accent-hex)',
-                        fontSize: 12, fontWeight: 600,
-                      }}>
-                        {row.type}
-                      </Box>
-                    </TableCell>
-                    <TableCell>{row.totalCalls.toLocaleString()}</TableCell>
-                    <TableCell>
-                      <Box sx={{
-                        display: 'inline-block', px: 1.5, py: 0.5,
-                        borderRadius: 'var(--radius-pill)',
-                        fontSize: 12, fontWeight: 600,
-                        background: row.performance >= 90
-                          ? 'rgba(16,185,129,0.1)'
-                          : row.performance >= 85
-                            ? 'rgba(245,158,11,0.1)'
-                            : 'rgba(239,68,68,0.1)',
-                        color: row.performance >= 90
-                          ? 'var(--success)'
-                          : row.performance >= 85
-                            ? 'var(--warning)'
-                            : 'var(--danger)',
-                      }}>
-                        {row.performance}%
-                      </Box>
-                    </TableCell>
-                    <TableCell>{row.avgTime}</TableCell>
-                    <TableCell align="center">
-                      <IconButton onClick={(e) => handleMenuOpen(e, row)} size="small">
-                        <Icon icon={faEllipsisV} />
-                      </IconButton>
-                    </TableCell>
+            <TableContainer component={Paper} sx={{
+              borderRadius: 'var(--radius-lg)',
+              border: '1px solid var(--glass-border)',
+              boxShadow: '0 8px 32px rgba(33,52,72,0.06)',
+              background: 'var(--glass-bg)',
+              backdropFilter: 'blur(var(--glass-blur))',
+              WebkitBackdropFilter: 'blur(var(--glass-blur))',
+            }}>
+              <Table>
+                <TableHead>
+                  <TableRow sx={{ bgcolor: 'transparent' }}>
+                    <TableCell sx={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Rank</TableCell>
+                    <TableCell sx={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Supervisor</TableCell>
+                    <TableCell sx={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Type</TableCell>
+                    <TableCell sx={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Monthly Calls</TableCell>
+                    <TableCell sx={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Performance</TableCell>
+                    <TableCell sx={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Avg Handle Time</TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 700, color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>Options</TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </>
+                </TableHead>
+                <TableBody>
+                  {leaderBoard.map((row) => (
+                    <TableRow key={row.id} hover sx={{ transition: 'background 0.2s' }}>
+                      <TableCell>
+                        <Box sx={{
+                          width: 28, height: 28, borderRadius: '50%',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: row.rank <= 3 ? 'linear-gradient(135deg, var(--primary-hex), var(--accent-hex))' : 'rgba(84,119,146,0.1)',
+                          color: row.rank <= 3 ? '#fff' : 'var(--text-main)',
+                          fontWeight: 700, fontSize: 12,
+                        }}>
+                          {row.rank}
+                        </Box>
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>{row.name}</TableCell>
+                      <TableCell>
+                        <Box sx={{
+                          display: 'inline-block', px: 1.5, py: 0.5,
+                          borderRadius: 'var(--radius-pill)',
+                          background: row.type === 'Voice' ? 'rgba(16,185,129,0.1)' : 'rgba(84,119,146,0.1)',
+                          color: row.type === 'Voice' ? 'var(--success)' : 'var(--accent-hex)',
+                          fontSize: 12, fontWeight: 600,
+                        }}>
+                          {row.type}
+                        </Box>
+                      </TableCell>
+                      <TableCell>{row.totalCalls.toLocaleString()}</TableCell>
+                      <TableCell>
+                        <Box sx={{
+                          display: 'inline-block', px: 1.5, py: 0.5,
+                          borderRadius: 'var(--radius-pill)',
+                          fontSize: 12, fontWeight: 600,
+                          background: row.performance >= 90
+                            ? 'rgba(16,185,129,0.1)'
+                            : row.performance >= 85
+                              ? 'rgba(245,158,11,0.1)'
+                              : 'rgba(239,68,68,0.1)',
+                          color: row.performance >= 90
+                            ? 'var(--success)'
+                            : row.performance >= 85
+                              ? 'var(--warning)'
+                              : 'var(--danger)',
+                        }}>
+                          {row.performance}%
+                        </Box>
+                      </TableCell>
+                      <TableCell>{row.avgTime}</TableCell>
+                      <TableCell align="center">
+                        <IconButton onClick={(e) => handleMenuOpen(e, row)} size="small">
+                          <Icon icon={faEllipsisV} />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
+
+          {/* Right Column: Access Requests */}
+          <Box>
+            <Typography variant="h5" fontWeight={600} color="var(--text-main)" sx={{ mb: 3 }}>
+              Access Requests
+            </Typography>
+            <Card sx={{
+              p: 2.5,
+              borderRadius: 'var(--radius-lg)',
+              border: '1px solid var(--glass-border)',
+              boxShadow: '0 8px 32px rgba(33,52,72,0.06)',
+              background: 'var(--glass-bg)',
+              backdropFilter: 'blur(var(--glass-blur))',
+              WebkitBackdropFilter: 'blur(var(--glass-blur))',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2.5
+            }}>
+              {[
+                { id: 1, name: 'Elena Vance', agent: 'TOMMY R.', desc: 'Requesting supervisor level access for internal chat moderation tools.', status: 'ALLOWED' },
+                { id: 2, name: 'Marcus Chen', agent: 'SARAH K.', desc: 'Agent needs access to sensitive customer data archive for historical billing dispute.', status: 'BLOCKED' },
+                { id: 3, name: 'David Kovac', agent: 'LEO G.', desc: 'Agent requires dashboard access for regional performance monitoring.', status: 'ALLOWED' }
+              ].map((req) => (
+                <Box key={req.id} sx={{ 
+                  p: 2, 
+                  borderRadius: 'var(--radius-md)', 
+                  border: '1px solid var(--glass-border)',
+                  background: 'rgba(255,255,255,0.03)',
+                  transition: 'transform 0.2s, box-shadow 0.2s',
+                  '&:hover': { transform: 'translateY(-2px)', boxShadow: '0 4px 12px rgba(33,52,72,0.05)' }
+                }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <Avatar sx={{ 
+                        width: 36, height: 36, 
+                        bgcolor: req.status === 'ALLOWED' ? 'rgba(79,110,247,0.08)' : 'rgba(239,68,68,0.08)', 
+                        color: req.status === 'ALLOWED' ? 'var(--action-primary)' : 'var(--danger)', 
+                        fontSize: 14 
+                      }}>
+                        <Icon icon={req.status === 'ALLOWED' ? faUserPlus : faLock} />
+                      </Avatar>
+                      <Box>
+                        <Typography variant="body2" fontWeight={700} color="var(--text-main)" sx={{ fontSize: 13 }}>
+                          {req.name}
+                        </Typography>
+                        <Typography variant="caption" color="var(--text-secondary)" sx={{ fontSize: 10, letterSpacing: 0.5 }}>
+                          AGENT: {req.agent}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <Box sx={{ 
+                      px: 1.2, py: 0.4, 
+                      borderRadius: 'var(--radius-pill)', 
+                      fontSize: 10, fontWeight: 700, 
+                      background: req.status === 'ALLOWED' ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)', 
+                      color: req.status === 'ALLOWED' ? 'var(--success)' : 'var(--danger)' 
+                    }}>
+                      {req.status}
+                    </Box>
+                  </Box>
+                  <Typography variant="body2" color="var(--text-secondary)" sx={{ fontSize: 13, lineHeight: 1.6 }}>
+                    {req.desc}
+                  </Typography>
+                </Box>
+              ))}
+            </Card>
+          </Box>
+        </Box>
       )}
 
       <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose} PaperProps={{ sx: { boxShadow: '0 8px 32px rgba(33,52,72,0.12)', borderRadius: 'var(--radius-md)', border: '1px solid var(--glass-border)' } }}>
