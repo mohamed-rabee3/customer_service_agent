@@ -9,6 +9,7 @@ Usage:
     python -m app.agents.agent_runner start   # Production mode
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -16,7 +17,7 @@ import os
 from dotenv import load_dotenv
 from livekit import agents, rtc
 from livekit.agents import AgentServer, AgentSession, room_io
-from livekit.plugins import google, groq, silero
+from livekit.plugins import elevenlabs, groq, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from app.agents.base_agent import update_agent_status, save_interaction_summary
@@ -28,8 +29,8 @@ load_dotenv()
 
 # Set API keys so plugins auto-discover them
 from app.core.config import settings
-os.environ.setdefault("GOOGLE_API_KEY", settings.gemini_api_key)
 os.environ.setdefault("GROQ_API_KEY", settings.groq_api_key)
+os.environ.setdefault("ELEVEN_API_KEY", settings.elevenlabs_api_key)
 
 logger = logging.getLogger("agent-runner")
 logging.basicConfig(level=logging.INFO)
@@ -53,13 +54,23 @@ async def entrypoint(ctx: agents.JobContext):
     """
     logger.info(f"Agent dispatched to room: {ctx.room.name}")
 
-    # Extract metadata from the room
-    room_metadata = {}
-    if ctx.room.metadata:
+    # Extract metadata — prefer dispatch metadata (ctx.job.metadata), which is
+    # what CreateAgentDispatchRequest sets. Fall back to room metadata.
+    room_metadata: dict = {}
+    raw_meta = ""
+    try:
+        raw_meta = (ctx.job.metadata or "") if getattr(ctx, "job", None) else ""
+    except Exception:
+        raw_meta = ""
+    if not raw_meta and ctx.room.metadata:
+        raw_meta = ctx.room.metadata
+    if raw_meta:
         try:
-            room_metadata = json.loads(ctx.room.metadata)
+            room_metadata = json.loads(raw_meta)
         except json.JSONDecodeError:
-            logger.warning("Failed to parse room metadata")
+            logger.warning("Failed to parse agent/room metadata: %r", raw_meta[:200])
+
+    logger.info(f"Agent metadata parsed: keys={list(room_metadata.keys())}")
 
     agent_db_id = room_metadata.get("agent_db_id", "unknown")
     interaction_type = room_metadata.get("interaction_type", "voice")
@@ -102,11 +113,17 @@ async def entrypoint(ctx: agents.JobContext):
             api_key=settings.groq_api_key,
             language="en",
         ),
-        llm=google.LLM(model="gemini-2.5-flash"),
-        tts=groq.TTS(
-            model="canopylabs/orpheus-v1-english",
-            voice="autumn",
+        llm=groq.LLM(
+            model="openai/gpt-oss-120b",
             api_key=settings.groq_api_key,
+            temperature=0.6,
+        ),
+        tts=elevenlabs.TTS(
+            voice_id=settings.elevenlabs_voice_id,
+            model=settings.elevenlabs_model,
+            api_key=settings.elevenlabs_api_key,
+            streaming_latency=4,
+            enable_ssml_parsing=False,
         ),
         vad=silero.VAD.load(),
         turn_detection=MultilingualModel(),
@@ -127,12 +144,21 @@ async def entrypoint(ctx: agents.JobContext):
                 )
 
                 # Put the customer on hold and process instructions
-                ctx.create_task(_handle_whisper(session, instructions, agent_db_id))
+                asyncio.create_task(_handle_whisper(session, instructions, agent_db_id))
 
             except Exception as e:
                 logger.error(f"Failed to process whisper: {e}")
 
     # ── Handle participant disconnect (end of interaction) ─────────────
+    post_call_done = False
+
+    async def _run_post_call_once() -> None:
+        nonlocal post_call_done
+        if post_call_done:
+            return
+        post_call_done = True
+        await _handle_post_call(session, agent_db_id, interaction_id)
+
     @ctx.room.on("participant_disconnected")
     def on_participant_disconnected(participant: rtc.RemoteParticipant):
         """Handle customer disconnection — trigger post-call processing."""
@@ -141,9 +167,11 @@ async def entrypoint(ctx: agents.JobContext):
                 f"Customer disconnected from room {ctx.room.name}. "
                 "Starting post-call processing..."
             )
-            ctx.create_task(
-                _handle_post_call(session, agent_db_id, interaction_id)
-            )
+            asyncio.create_task(_run_post_call_once())
+
+    # Shutdown callback — awaited by the runtime, so DB writes always complete
+    # even if the room tears down immediately after the customer hangs up.
+    ctx.add_shutdown_callback(_run_post_call_once)
 
     # ── Start the agent session ────────────────────────────────────────
     await session.start(
@@ -213,8 +241,30 @@ async def _handle_post_call(
     3. Update agent status to idle
     """
     try:
+        from app.agents.base_agent import _get_client
+
+        # Resolve agent_db_id from the interaction if metadata didn't carry it
+        if (not agent_db_id or agent_db_id == "unknown") and interaction_id:
+            try:
+                client = _get_client()
+                row = (
+                    client.table("interactions")
+                    .select("agent_id")
+                    .eq("id", interaction_id)
+                    .limit(1)
+                    .execute()
+                )
+                if row.data:
+                    agent_db_id = row.data[0]["agent_id"]
+                    logger.info(f"Resolved agent_db_id from interaction: {agent_db_id}")
+            except Exception as e:
+                logger.warning(f"Could not resolve agent_db_id: {e}")
+
         # Update agent status to idle
-        update_agent_status(agent_db_id, AgentStatus.IDLE)
+        if agent_db_id and agent_db_id != "unknown":
+            update_agent_status(agent_db_id, AgentStatus.IDLE)
+        else:
+            logger.error("Skipping agent status update — agent_db_id unknown")
 
         # Update interaction status to completed
         if interaction_id:

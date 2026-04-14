@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     groq_api_key: str = ""
 
+    # ElevenLabs TTS
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"  # Rachel — female
+    elevenlabs_model: str = "eleven_flash_v2_5"  # ~75ms latency, realtime
+
     @property
     def cors_origins_list(self) -> list[str]:
         """Parse CORS origins string into list."""
