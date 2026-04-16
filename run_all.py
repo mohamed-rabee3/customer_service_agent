@@ -106,7 +106,17 @@ for agent in res.data:
             with urllib.request.urlopen(api_url) as resp:
                 print(f"Telegram response: {{resp.read().decode()}}")
         except Exception as e:
-            print(f"Failed to update Telegram: {{e}}")
+            err_msg = str(e)
+            if "429" in err_msg:
+                print(f"Failed to update Telegram: Rate limited (429).")
+            elif "404" in err_msg:
+                print(f"Failed to update Telegram: Invalid token (404). Check token for agent {{agent['id']}}.")
+            else:
+                print(f"Failed to update Telegram: {{e}}")
+        
+        # Avoid rate limits
+        import time
+        time.sleep(1)
 """)
     
     print(f"Running updater from {BACKEND_DIR} using {venv_python}")
