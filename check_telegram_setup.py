@@ -66,7 +66,7 @@ def check_agents_in_database():
     
     try:
         os.environ.setdefault('SUPABASE_URL', 'https://wtcgejudonztjtdishft.supabase.co')
-        os.environ.setdefault('SUPABASE_SERVICE_KEY', 'sb_secret_A3OSFTE-_UbJcAz15RdncA_1qJS5GIG')
+        os.environ.setdefault('SUPABASE_SERVICE_KEY', '')
         
         from app.db.supabase import get_supabase_service_client
         
