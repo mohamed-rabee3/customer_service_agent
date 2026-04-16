@@ -24,5 +24,5 @@ class Interaction(BaseModel):
     summary: str | None = None
     issues: dict[str, Any] | None = None  # JSON field
     tags: dict[str, Any] | None = None  # JSON field
-    call_source_ID: str | None = None  # chat: chatID, voice: livekit_room_id
+    call_source_id: str | None = None  # chat: chatID, voice: livekit_room_id
 

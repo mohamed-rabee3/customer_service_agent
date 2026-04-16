@@ -1,15 +1,20 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Edit3, Trash2, Power } from 'lucide-react';
 import AgentAvatar from './AgentAvatar';
 
 interface ChatAgent {
   id: string;
   name: string;
-  status: 'active' | 'idle';
+  status: 'active' | 'idle' | 'paused';
   sentiment: string;
   performance: string;
   feed: string;
   session_id?: string;
+  webhook_configs?: {
+    telegram?: { enabled?: boolean };
+    whatsapp?: { enabled?: boolean };
+    instagram?: { enabled?: boolean };
+  };
 }
 
 interface ChatAgentCardProps {
@@ -17,9 +22,12 @@ interface ChatAgentCardProps {
   index: number;
   isSelected: boolean;
   onClick: (agent: ChatAgent) => void;
+  onEdit?: (agent: ChatAgent) => void;
+  onDelete?: (agent: ChatAgent) => void;
+  onToggleStatus?: (agent: ChatAgent) => void;
 }
 
-const ChatAgentCard: React.FC<ChatAgentCardProps> = ({ agent, index, isSelected, onClick }) => {
+const ChatAgentCard: React.FC<ChatAgentCardProps> = ({ agent, index, isSelected, onClick, onEdit, onDelete, onToggleStatus }) => {
   const [isClicking, setIsClicking] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -65,7 +73,24 @@ const ChatAgentCard: React.FC<ChatAgentCardProps> = ({ agent, index, isSelected,
             {agent.status}
           </span>
         </div>
-        <MessageSquare size={18} style={{ color: 'var(--text-muted)' }} />
+        <div className="flex items-center gap-1.5">
+          {agent.webhook_configs?.telegram?.enabled && (
+            <span className="text-xs px-2 py-1 rounded-md" style={{ backgroundColor: 'rgba(84,119,146,0.2)', color: 'var(--primary)' }} title="Telegram enabled">
+              📤
+            </span>
+          )}
+          {agent.webhook_configs?.whatsapp?.enabled && (
+            <span className="text-xs px-2 py-1 rounded-md" style={{ backgroundColor: 'rgba(84,119,146,0.2)', color: 'var(--primary)' }} title="WhatsApp enabled">
+              📱
+            </span>
+          )}
+          {agent.webhook_configs?.instagram?.enabled && (
+            <span className="text-xs px-2 py-1 rounded-md" style={{ backgroundColor: 'rgba(84,119,146,0.2)', color: 'var(--primary)' }} title="Instagram enabled">
+              📸
+            </span>
+          )}
+          <MessageSquare size={18} style={{ color: 'var(--text-muted)' }} />
+        </div>
       </div>
 
       <div className="flex justify-center mb-4">
@@ -88,6 +113,39 @@ const ChatAgentCard: React.FC<ChatAgentCardProps> = ({ agent, index, isSelected,
           <p className="text-base font-bold capitalize" style={{ color: 'var(--text-main)' }}>{agent.sentiment}</p>
         </div>
       </div>
+
+      {(onEdit || onDelete || onToggleStatus) && (
+          <div className="flex gap-2 mt-5 px-1 flex-wrap justify-center">
+              {onToggleStatus && (
+                  <button
+                      onClick={(e) => { e.stopPropagation(); onToggleStatus(agent); }}
+                      className="agent-config-btn"
+                      style={{ 
+                          color: agent.status === 'paused' ? 'var(--text-muted)' : 'var(--success)', 
+                          borderColor: agent.status === 'paused' ? 'var(--border)' : 'var(--success)' 
+                      }}
+                  >
+                      <Power size={15} /> {agent.status === 'paused' ? 'Turn On' : 'Turn Off'}
+                  </button>
+              )}
+              {onEdit && (
+                  <button
+                      onClick={(e) => { e.stopPropagation(); onEdit(agent); }}
+                      className="agent-config-btn agent-config-btn--edit"
+                  >
+                      <Edit3 size={15} /> Edit
+                  </button>
+              )}
+              {onDelete && (
+                  <button
+                      onClick={(e) => { e.stopPropagation(); onDelete(agent); }}
+                      className="agent-config-btn agent-config-btn--delete"
+                  >
+                      <Trash2 size={15} /> Delete
+                  </button>
+              )}
+          </div>
+      )}
 
       <div className="card-glow-bar" />
     </div>

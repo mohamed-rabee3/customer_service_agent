@@ -23,7 +23,7 @@ import { X, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Settings, Bell, Shield, Bot, Key, Check, Loader2 } from 'lucide-react';
 import { InputAdornment } from '@mui/material';
-import { ToastContainer, toast } from 'react-toastify';
+import { toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
 type SettingsTab = 'general' | 'notifications' | 'security' | 'ai' | 'api';
@@ -565,7 +565,7 @@ const SettingsPage: React.FC = () => {
         </Box>
       </Box>
 
-      <ToastContainer position="top-right" autoClose={3000} hideProgressBar newestOnTop closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="colored" />
+
 
       <style>{`
         @keyframes spin {

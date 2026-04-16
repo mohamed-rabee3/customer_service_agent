@@ -19,8 +19,10 @@ import LoginPage from './pages/LoginPage';
 import AgentConfiguration from './pages/agents/AgentConfiguration';
 import ChatMonitoring from './pages/agents/ChatMonitoring';
 import VoiceAgentMonitoring from './pages/agents/VoiceAgentMonitoring';
+import SupervisorManagement from './pages/admin/SupervisorManagement'; 
 import MainLayout from './components/Layout/MainLayout';
-
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 const ArchiveRouter: React.FC = () => {
   const { role, supervisorType } = useAuth();
   if (role === 'supervisor') {
@@ -82,6 +84,7 @@ function AppRoutes() {
         <Route path="/issues" element={<AdminRoute><ArchiveIssues /></AdminRoute>} />
         <Route path="/settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
         <Route path="/agent-config" element={<AdminRoute><AgentConfiguration /></AdminRoute>} />
+        <Route path="/supervisors" element={<AdminRoute><SupervisorManagement /></AdminRoute>} />
 
         {/* Supervisor (+ Admin fallback) Routes */}
         <Route path="/voice-agent" element={<SupervisorRoute type="voice"><VoiceAgentMonitoring /></SupervisorRoute>} />
@@ -101,6 +104,7 @@ function App() {
             <CssBaseline />
             <Router>
               <AppRoutes />
+              <ToastContainer position="top-right" autoClose={3000} hideProgressBar newestOnTop closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="colored" />
             </Router>
           </MuiThemeProvider>
         </UserProfileProvider>

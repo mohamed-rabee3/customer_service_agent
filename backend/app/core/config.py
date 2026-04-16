@@ -36,10 +36,11 @@ class Settings(BaseSettings):
 
     # OpenRouter Configuration
     openrouter_api_key: str = ""
-    openrouter_model: str = "qwen/qwen3-235b-a22b:free"
+    openrouter_model: str = "meta-llama/llama-3.3-70b-instruct:free"
 
     # Telegram Bot Configuration
     telegram_bot_token: str = ""
+    webhook_domain: str = ""  # Domain for webhook callbacks (e.g., https://yourdomain.com)
 
     @property
     def cors_origins_list(self) -> list[str]:

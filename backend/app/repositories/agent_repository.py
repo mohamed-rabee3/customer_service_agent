@@ -23,6 +23,7 @@ class AgentModel(BaseModel):
     system_prompt: str
     status: AgentStatus
     telegram_bot_token: str | None = None
+    webhook_configs: dict[str, Any] = {}
     mcp_tools: dict[str, Any]
     created_at: datetime
     updated_at: datetime
@@ -69,6 +70,7 @@ class AgentRepository(BaseRepository[AgentModel]):
         system_prompt: str,
         mcp_tools: dict[str, Any],
         telegram_bot_token: str | None = None,
+        webhook_configs: dict[str, Any] | None = None,
         agent_type: AgentType = AgentType.VOICE,
     ) -> AgentModel:
         """
@@ -77,11 +79,18 @@ class AgentRepository(BaseRepository[AgentModel]):
         """
         now = datetime.now(timezone.utc).isoformat()
 
-        # We construct the model data manually here as per previous logic
-        # Ideally we could construct AgentModel in service and call super().create(model),
-        # but creating a Pydantic model with auto-generated fields (id, dates) is tricky without db default return.
-        # So we keep this custom method but could use super().create if we passed a full dict.
-        # Sticking to custom dict insert for precision.
+        # Initialize default webhook_configs if not provided
+        if webhook_configs is None:
+            webhook_configs = {
+                "telegram": {"enabled": False, "bot_token": None},
+                "whatsapp": {"enabled": False, "phone_number": None, "api_token": None, "provider": None},
+                "instagram": {"enabled": False, "business_account_id": None, "api_token": None}
+            }
+        
+        # If telegram_bot_token is provided, add it to webhook_configs
+        if telegram_bot_token and "telegram" in webhook_configs:
+            webhook_configs["telegram"]["bot_token"] = telegram_bot_token
+            webhook_configs["telegram"]["enabled"] = True
         
         agent_data = {
             "supervisor_id": str(supervisor_id),
@@ -90,6 +99,7 @@ class AgentRepository(BaseRepository[AgentModel]):
             "system_prompt": system_prompt,
             "status": AgentStatus.IDLE.value,
             "telegram_bot_token": telegram_bot_token,
+            "webhook_configs": webhook_configs,
             "mcp_tools": mcp_tools,
             "created_at": now,
             "updated_at": now,

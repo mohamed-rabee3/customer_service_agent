@@ -6,6 +6,8 @@ import AgentAvatar from '@/components/agents/AgentAvatar';
 import '@/components/agents/VoiceAgentSelector.css';
 import { agentsAPI } from '@/services/agentsService';
 import { supervisorsAPI } from '@/services/supervisorsService';
+import AgentFormModal from '@/components/agents/AgentFormModal';
+import AddAgentCard from '@/components/agents/AddAgentCard';
 
 interface Agent {
     id: string;
@@ -15,6 +17,7 @@ interface Agent {
     telegram_bot_token?: string;
     status: string;
     mcp_tools: Record<string, any>;
+    webhook_configs?: Record<string, any>;
 }
 
 // ── Agent Config Card (Voice Agent style) ──
@@ -103,6 +106,13 @@ const AgentConfigCard: React.FC<AgentCardProps> = ({ agent, index, onEdit, onDel
                     </div>
                 </div>
 
+                {/* Telegram Badge */}
+                {agent.agent_type === 'chat' && agent.telegram_bot_token && (
+                    <div className="mb-4 px-3 py-2 rounded-lg text-center text-xs font-semibold" style={{ backgroundColor: 'rgba(66, 185, 131, 0.1)', color: 'var(--success)', border: '1px solid var(--success)' }}>
+                        🤖 Telegram Enabled
+                    </div>
+                )}
+
                 {/* Action Buttons */}
                 <div className="flex gap-3">
                     <button
@@ -125,145 +135,7 @@ const AgentConfigCard: React.FC<AgentCardProps> = ({ agent, index, onEdit, onDel
     );
 };
 
-// ── Add Card (dashed) ──
-const AddAgentCard: React.FC<{ index: number; onClick: () => void }> = ({ index, onClick }) => {
-    const cardRef = useRef<HTMLDivElement>(null);
 
-    return (
-        <div
-            ref={cardRef}
-            onClick={onClick}
-            className="voice-agent-card group"
-            style={{
-                animationDelay: `${index * 150}ms`,
-                border: '2px dashed var(--border)',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                minHeight: 320,
-                cursor: 'pointer',
-            }}
-        >
-            <div className="agent-icon-ring mb-4" style={{ borderStyle: 'dashed' }}>
-                <Plus size={28} style={{ color: 'var(--text-secondary)' }} />
-            </div>
-            <h3 className="text-lg font-bold" style={{ color: 'var(--text-secondary)' }}>
-                Add New Agent
-            </h3>
-            <div className="card-glow-bar" />
-        </div>
-    );
-};
-
-// ── Modal (native, matching voice agent modal style) ──
-interface FormModalProps {
-    open: boolean;
-    title: string;
-    formData: { name: string; system_prompt: string; telegram_bot_token?: string; };
-    onChange: (data: { name: string; system_prompt: string; telegram_bot_token?: string; }) => void;
-    onSubmit: () => void;
-    onClose: () => void;
-    submitLabel: string;
-    loading?: boolean;
-}
-
-const AgentFormModal: React.FC<FormModalProps> = ({ open, title, formData, onChange, onSubmit, onClose, submitLabel, loading }) => {
-    const [animState, setAnimState] = useState<'entering' | 'exiting' | ''>('');
-
-    React.useEffect(() => {
-        if (open) setAnimState('entering');
-    }, [open]);
-
-    const handleClose = () => {
-        setAnimState('exiting');
-        setTimeout(onClose, 300);
-    };
-
-    if (!open && animState !== 'exiting') return null;
-
-    return (
-        <div
-            className={`agent-modal-overlay ${animState === 'entering' ? 'agent-modal-overlay--entering' : ''} ${animState === 'exiting' ? 'agent-modal-overlay--exiting' : ''}`}
-            onClick={handleClose}
-        >
-            <div
-                className={`agent-modal-content ${animState === 'entering' ? 'agent-modal-content--entering' : ''} ${animState === 'exiting' ? 'agent-modal-content--exiting' : ''}`}
-                onClick={(e) => e.stopPropagation()}
-            >
-                {/* Close */}
-                <button
-                    onClick={handleClose}
-                    style={{
-                        position: 'absolute', top: 16, right: 16,
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        color: 'var(--text-muted)',
-                    }}
-                >
-                    <X size={20} />
-                </button>
-
-                <h2 className="text-xl font-bold mb-6 modal-stagger-1" style={{ color: 'var(--text-main)' }}>{title}</h2>
-
-                <div className="flex flex-col gap-4 modal-stagger-2">
-                    <div>
-                        <label className="text-xs font-semibold uppercase tracking-widest mb-1 block" style={{ color: 'var(--text-muted)' }}>Agent Name</label>
-                        <input
-                            type="text"
-                            value={formData.name}
-                            onChange={(e) => onChange({ ...formData, name: e.target.value })}
-                            className="w-full px-4 py-3 rounded-xl border outline-none"
-                            style={{
-                                backgroundColor: 'var(--bg-dark)',
-                                borderColor: 'var(--border)',
-                                color: 'var(--text-main)',
-                            }}
-                        />
-                    </div>
-                    <div>
-                        <label className="text-xs font-semibold uppercase tracking-widest mb-1 block" style={{ color: 'var(--text-muted)' }}>System Prompt</label>
-                        <textarea
-                            value={formData.system_prompt}
-                            onChange={(e) => onChange({ ...formData, system_prompt: e.target.value })}
-                            rows={4}
-                            className="w-full px-4 py-3 rounded-xl border outline-none"
-                            style={{
-                                backgroundColor: 'var(--bg-dark)',
-                                borderColor: 'var(--border)',
-                                color: 'var(--text-main)',
-                                resize: 'vertical',
-                            }}
-                        />
-                    </div>
-                    <div>
-                        <label className="text-xs font-semibold uppercase tracking-widest mb-1 block" style={{ color: 'var(--text-muted)' }}>Telegram Bot Token (Optional)</label>
-                        <input
-                            type="text"
-                            value={formData.telegram_bot_token || ''}
-                            onChange={(e) => onChange({ ...formData, telegram_bot_token: e.target.value })}
-                            className="w-full px-4 py-3 rounded-xl border outline-none"
-                            style={{
-                                backgroundColor: 'var(--bg-dark)',
-                                borderColor: 'var(--border)',
-                                color: 'var(--text-main)',
-                            }}
-                            placeholder="e.g. 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
-                        />
-                    </div>
-                </div>
-
-                <div className="flex gap-3 mt-6">
-                    <button onClick={handleClose} className="agent-config-btn agent-config-btn--cancel modal-stagger-btn-1">
-                        Cancel
-                    </button>
-                    <button onClick={onSubmit} disabled={loading} className="agent-config-btn agent-config-btn--save modal-stagger-btn-2">
-                        {loading ? 'Saving...' : submitLabel}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
 
 // ── Main Page ──
 const AgentConfiguration: React.FC = () => {
@@ -274,9 +146,11 @@ const AgentConfiguration: React.FC = () => {
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
-    const [formData, setFormData] = useState({ name: '', system_prompt: '', telegram_bot_token: '' });
+    const [formData, setFormData] = useState<{ name: string; system_prompt: string; telegram_bot_token?: string; agent_type?: 'voice' | 'chat'; webhook_configs?: Record<string, any> }>({ 
+        name: '', system_prompt: '', telegram_bot_token: '', agent_type: 'voice', webhook_configs: {} 
+    });
 
-    const resetForm = () => setFormData({ name: '', system_prompt: '', telegram_bot_token: '' });
+    const resetForm = () => setFormData({ name: '', system_prompt: '', telegram_bot_token: '', agent_type: 'voice', webhook_configs: {} });
 
     // Fetch agents from the supervisor dashboard endpoint
     const fetchAgents = async () => {
@@ -292,6 +166,7 @@ const AgentConfiguration: React.FC = () => {
                     telegram_bot_token: a.telegram_bot_token as string || '',
                     status: a.status as string,
                     mcp_tools: a.mcp_tools as Record<string, any> || {},
+                    webhook_configs: a.webhook_configs as Record<string, any> || {},
                 })));
             }
         } catch (err: unknown) {
@@ -312,7 +187,9 @@ const AgentConfiguration: React.FC = () => {
             await agentsAPI.create({ 
                 name: formData.name, 
                 system_prompt: formData.system_prompt, 
-                telegram_bot_token: formData.telegram_bot_token 
+                telegram_bot_token: formData.telegram_bot_token,
+                agent_type: formData.agent_type,
+                webhook_configs: formData.webhook_configs
             });
             toast.success('Agent created successfully');
             setAddModalOpen(false);
@@ -333,13 +210,17 @@ const AgentConfiguration: React.FC = () => {
             setFormData({ 
                 name: res.data.name, 
                 system_prompt: res.data.system_prompt || '',
-                telegram_bot_token: res.data.telegram_bot_token || ''
+                telegram_bot_token: res.data.telegram_bot_token || '',
+                agent_type: selectedAgent.agent_type,
+                webhook_configs: res.data.webhook_configs || {}
             });
         } catch {
             setFormData({ 
                 name: agent.name, 
                 system_prompt: agent.system_prompt,
-                telegram_bot_token: agent.telegram_bot_token || ''
+                telegram_bot_token: agent.telegram_bot_token || '',
+                agent_type: agent.agent_type,
+                webhook_configs: agent.webhook_configs || {}
             });
         }
         setEditModalOpen(true);
@@ -354,7 +235,9 @@ const AgentConfiguration: React.FC = () => {
             await agentsAPI.update(selectedAgent.id, { 
                 name: formData.name, 
                 system_prompt: formData.system_prompt,
-                telegram_bot_token: formData.telegram_bot_token
+                telegram_bot_token: formData.telegram_bot_token,
+                agent_type: formData.agent_type,
+                webhook_configs: formData.webhook_configs
             });
             toast.success('Agent updated successfully');
             setEditModalOpen(false);
@@ -429,6 +312,7 @@ const AgentConfiguration: React.FC = () => {
                 onClose={() => setAddModalOpen(false)}
                 submitLabel="Add Agent"
                 loading={saving}
+                showAgentTypeField={true}
             />
             <AgentFormModal
                 open={editModalOpen}
@@ -439,6 +323,8 @@ const AgentConfiguration: React.FC = () => {
                 onClose={() => { setEditModalOpen(false); setSelectedAgent(null); }}
                 submitLabel="Save Changes"
                 loading={saving}
+                existingAgentId={selectedAgent?.id}
+                showAgentTypeField={true}
             />
             <DeleteConfirmModal
                 open={deleteModalOpen}

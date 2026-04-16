@@ -5,7 +5,7 @@ import avatar3 from '@/assets/avatar-agent-3.png';
 
 interface AgentAvatarProps {
   name: string;
-  status: 'active' | 'idle';
+  status: 'active' | 'idle' | 'paused';
   size?: 'sm' | 'md' | 'lg';
   showStatus?: boolean;
 }

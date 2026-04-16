@@ -8,8 +8,11 @@ export type SupervisorType = 'voice' | 'chat';
 interface UserProfile {
   id: string;
   role: UserRole;
-  supervisor_type?: SupervisorType;
   email?: string;
+  profile?: {
+    supervisor_type?: SupervisorType;
+    name?: string;
+  };
 }
 
 interface AuthContextType {
@@ -38,8 +41,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const profile: UserProfile = res.data;
       setRole(profile.role);
       setUserId(profile.id);
-      if (profile.role === 'supervisor' && profile.supervisor_type) {
-        setSupervisorType(profile.supervisor_type);
+      if (profile.role === 'supervisor' && profile.profile?.supervisor_type) {
+        setSupervisorType(profile.profile.supervisor_type);
       }
       setIsLoggedIn(true);
       return true;

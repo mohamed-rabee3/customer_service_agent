@@ -6,6 +6,7 @@ import {
     Settings,
     LogOut,
     Cog,
+    Shield,
 } from 'lucide-react';
 import './Sidebar.css';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -40,13 +41,14 @@ const Sidebar: React.FC<SidebarProps> = ({ onLogout, isOpen, onClose }) => {
                 { path: '/', label: 'Dashboard', icon: LayoutDashboard },
                 { path: '/analytics', label: 'Analytics', icon: BarChart2 },
                 { path: '/archive', label: 'Archive', icon: Users },
+                { path: '/agent-config', label: 'Agent Config', icon: Cog },
+                { path: '/supervisors', label: 'Supervisors', icon: Shield },
             ];
         }
         return [
             { path: '/', label: 'Dashboard', icon: LayoutDashboard },
             { path: '/analytics', label: 'Analytics', icon: BarChart2 },
             { path: '/archive', label: 'Archive', icon: Users },
-            { path: '/agent-config', label: 'Agent Config', icon: Cog },
         ];
     };
 

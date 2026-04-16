@@ -12,6 +12,8 @@ export default defineConfig(({ mode }) => ({
       overlay: false,
     },
   },
+  envDir: path.resolve(__dirname, "../backend"),
+  envPrefix: ['VITE_', 'SUPABASE_URL', 'SUPABASE_KEY'],
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
     alias: {

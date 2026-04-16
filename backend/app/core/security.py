@@ -83,9 +83,11 @@ async def get_current_user(
     from app.db.supabase import request_jwt
     request_jwt.set(token)
 
+    auth_supabase: Client = get_supabase_client()
+
     # Check admin role (RLS: admin can see their own row)
     admin_result = (
-        supabase.table("admin")
+        auth_supabase.table("admin")
         .select("created_at")
         .eq("userID", user_id_str)
         .limit(1)
@@ -106,7 +108,7 @@ async def get_current_user(
 
     # Check supervisor role (RLS: supervisor can see their own row)
     supervisor_result = (
-        supabase.table("supervisors")
+        auth_supabase.table("supervisors")
         .select("supervisor_type, created_at")
         .eq("userID", user_id_str)
         .limit(1)
