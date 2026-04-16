@@ -1,5 +1,0 @@
-﻿[FAIL] google/gemma-3-27b-it:free -> HTTP 429
-[FAIL] google/gemma-3-12b-it:free -> HTTP 429
-[FAIL] meta-llama/llama-3.3-70b-instruct:free -> HTTP 429
-[FAIL] meta-llama/llama-3.2-3b-instruct:free -> HTTP 429
-[FAIL] google/gemma-3-4b-it:free -> HTTP 429

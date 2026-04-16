@@ -1,5 +1,0 @@
-﻿Agent: Voice Agent Alpha | ID: 7ae501dd-009b-48ec-b5a3-ae6583554901
-Webhook URL: https://new-mice-go.loca.lt/v1/telegram/7ae501dd-009b-48ec-b5a3-ae6583554901
-Pending updates: 0
-Last error: none
-Last error date: none
