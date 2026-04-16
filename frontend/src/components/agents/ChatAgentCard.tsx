@@ -1,6 +1,8 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { MessageSquare, Edit3, Trash2, Power } from 'lucide-react';
 import AgentAvatar from './AgentAvatar';
+import Icon from '../Icon';
+import { IconProp } from '@fortawesome/fontawesome-svg-core';
 
 interface ChatAgent {
   id: string;
@@ -75,18 +77,18 @@ const ChatAgentCard: React.FC<ChatAgentCardProps> = ({ agent, index, isSelected,
         </div>
         <div className="flex items-center gap-1.5">
           {agent.webhook_configs?.telegram?.enabled && (
-            <span className="text-xs px-2 py-1 rounded-md" style={{ backgroundColor: 'rgba(84,119,146,0.2)', color: 'var(--primary)' }} title="Telegram enabled">
-              📤
+            <span className="flex items-center justify-center w-7 h-7 rounded-lg" style={{ backgroundColor: 'rgba(0, 136, 204, 0.15)', color: '#0088cc' }} title="Telegram enabled">
+              <Icon icon={['fab', 'telegram'] as IconProp} size="sm" />
             </span>
           )}
           {agent.webhook_configs?.whatsapp?.enabled && (
-            <span className="text-xs px-2 py-1 rounded-md" style={{ backgroundColor: 'rgba(84,119,146,0.2)', color: 'var(--primary)' }} title="WhatsApp enabled">
-              📱
+            <span className="flex items-center justify-center w-7 h-7 rounded-lg" style={{ backgroundColor: 'rgba(37, 211, 102, 0.15)', color: '#25D366' }} title="WhatsApp enabled">
+              <Icon icon={['fab', 'whatsapp'] as IconProp} size="sm" />
             </span>
           )}
           {agent.webhook_configs?.instagram?.enabled && (
-            <span className="text-xs px-2 py-1 rounded-md" style={{ backgroundColor: 'rgba(84,119,146,0.2)', color: 'var(--primary)' }} title="Instagram enabled">
-              📸
+            <span className="flex items-center justify-center w-7 h-7 rounded-lg" style={{ backgroundColor: 'rgba(225, 48, 108, 0.15)', color: '#E1306C' }} title="Instagram enabled">
+              <Icon icon={['fab', 'instagram'] as IconProp} size="sm" />
             </span>
           )}
           <MessageSquare size={18} style={{ color: 'var(--text-muted)' }} />

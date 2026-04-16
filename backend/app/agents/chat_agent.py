@@ -77,8 +77,17 @@ class ChatAgent:
                 full_response += chunk
                 yield chunk
         except Exception as e:
+            error_str = str(e).lower()
             logger.error(f"LLM streaming error for interaction {self.interaction_id}: {e}")
-            error_msg = "I apologize, but I'm experiencing a technical issue. Please try again."
+            
+            # Check for specific error types to provide better user feedback
+            if "rate-limit" in error_str or "429" in error_str:
+                error_msg = "I'm currently receiving too many requests. Please try again in a few minutes."
+            elif "all configured llm models failed" in error_str:
+                error_msg = "I'm having trouble connecting to my brain right now (all AI models failed). Please contact support if this persists."
+            else:
+                error_msg = "I apologize, but I'm experiencing a technical issue with my AI response generator. Please try again."
+            
             full_response = error_msg
             yield error_msg
 

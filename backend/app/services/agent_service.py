@@ -198,18 +198,26 @@ def update_agent(
             detail="Invalid Telegram bot token format. Please use the token from BotFather (format: 123456:ABC-DEF1234ghIkl...)",
         )
 
-    # Handle webhook_configs update for Telegram token
+    # Ensure telegram_bot_token and webhook_configs stay in sync
     webhook_configs = request.webhook_configs or agent.webhook_configs or {}
+    tg_conf = webhook_configs.get("telegram", {})
     
-    # If telegram_bot_token is provided, merge it into webhook_configs
     if request.telegram_bot_token:
+        # Sync from request to webhook_configs
         if "telegram" not in webhook_configs:
             webhook_configs["telegram"] = {}
         webhook_configs["telegram"]["bot_token"] = request.telegram_bot_token.strip()
         webhook_configs["telegram"]["enabled"] = True
-        # Update the request to include the modified webhook_configs
-        request.webhook_configs = webhook_configs
-        logger.info(f"✅ Updating agent {agent_id} with Telegram token (enabled in webhook_configs)")
+    elif tg_conf.get("bot_token"):
+        # Sync from webhook_configs to request
+        request.telegram_bot_token = tg_conf.get("bot_token").strip()
+        
+    # Update the request to include the unified webhook_configs
+    request.webhook_configs = webhook_configs
+    
+    # Log the update for debugging
+    if request.telegram_bot_token:
+        logger.info(f"✅ Preparing update for agent {agent_id} with Telegram token: {request.telegram_bot_token[:10]}...")
     
     try:
         updated_agent = agent_repository.update(agent_id, request)
@@ -235,6 +243,7 @@ def delete_agent(agent_id: UUID, supervisor_id: UUID) -> None:
     try:
         agent_repository.delete(agent_id)
     except Exception as e:
+        logger.error(f"Error deleting agent: {e}")
         # Check for FK violation (ON DELETE RESTRICT in database.sql)
         error_msg = str(e).lower()
         if "foreign key constraint" in error_msg or "violates foreign key" in error_msg:

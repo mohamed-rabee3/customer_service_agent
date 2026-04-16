@@ -124,7 +124,7 @@ def create_supervisor(data: SupervisorCreate) -> dict:
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="An internal error occurred while creating the auth user.",
+            detail=f"An internal error occurred while creating the auth user: {str(e)}",
         )
 
     if not auth_user or not auth_user.user:

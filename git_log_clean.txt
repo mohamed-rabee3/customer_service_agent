@@ -1,0 +1,30 @@
+14e4a31 2026-04-15 00:06:03 +0200 Add ElevenLabs TTS integration and update conf
+5643e38 2026-04-14 21:02:06 +0200 Fix login role detection and add user creation
+1d7fc81 2026-04-12 23:44:27 +0200 fix(supervisor): force supervisor name persist
+2405d7f 2026-04-05 16:52:10 +0200 The web_hooks
+e4d00e7 2026-04-02 08:29:25 +0200 Chat agent endpoints + handle the wires with t
+63796a6 2026-03-30 22:36:40 +0200 final_edits_For_voice
+db85006 2026-03-23 18:37:06 +0200 Merge branch 'Frontend-branch'
+7288eba 2026-03-19 21:54:15 +0200 feat: complete login page UI redesign and proj
+f0acf41 2026-03-18 02:25:55 +0200 Merge Backend-branch: restore all tested backe
+53b576a 2026-03-09 03:59:01 +0200 frontend update
+11a5c27 2026-03-09 03:44:13 +0200 updated frontend
+1680704 2026-03-04 04:04:36 +0200 Fix POST /tools/permissions/{id}/respond: Remo
+9d4bb9d 2026-03-04 03:46:39 +0200 Fix POST/DELETE supervisors: Use service role 
+1b46bca 2026-03-04 03:31:51 +0200 Fix PUT /supervisors response mapping: userID-
+9b28194 2026-03-04 03:13:13 +0200 Fix last .single() crash in analytics_reposito
+f2a386f 2026-03-04 03:12:12 +0200 Fix .single() crashes in interaction_repositor
+d130b88 2026-03-04 03:10:15 +0200 Fix 3 runtime bugs: analytics .single() crash,
+3e5ac7f 2026-03-04 02:05:20 +0200 Merge Sundus: tools endpoints, supervisor CRUD
+7bf8cb0 2026-03-04 01:40:13 +0200 Merge Yasmine: archives, interactions, analyti
+deac8cc 2026-03-04 00:40:48 +0200 chore: remove temp_tests introduced by Moaz
+fdb23bc 2026-03-04 00:31:00 +0200 Merge Moaz's agents/supervisors implementation
+971db88 2026-02-14 01:13:38 +0200 Final Updates
+7362e37 2026-02-12 21:47:01 +0200 feat: supervisors + tools permissions + analyt
+f6ce0c1 2026-01-21 10:20:07 +0200 Fix auth flow and add exception handler
+e45b8d9 2026-01-20 01:37:54 +0200 Update seminar documentation with project deta
+a1cbae8 2026-01-19 17:56:59 +0200 Update seminar documentation with project deta
+de056af 2026-01-19 17:29:56 +0200 Revise seminar documentation with new sections
+c528270 2026-01-19 16:43:45 +0200 Add files via upload
+d1fdfa7 2026-01-16 18:01:33 +0200 frontend upload
+0cd93ba 2026-01-16 17:56:40 +0200 .

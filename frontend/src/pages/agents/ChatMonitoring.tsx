@@ -51,11 +51,17 @@ const ChatMonitoring: React.FC = () => {
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [configTarget, setConfigTarget] = useState<ChatAgent | null>(null);
-    const [formData, setFormData] = useState<{ name: string; system_prompt: string; telegram_bot_token?: string; agent_type?: 'voice' | 'chat' }>({ 
-        name: '', system_prompt: '', telegram_bot_token: '', agent_type: 'chat' 
+    const [formData, setFormData] = useState<{ 
+        name: string; 
+        system_prompt: string; 
+        telegram_bot_token?: string; 
+        agent_type?: 'voice' | 'chat';
+        webhook_configs: Record<string, any>;
+    }>({ 
+        name: '', system_prompt: '', telegram_bot_token: '', agent_type: 'chat', webhook_configs: {} 
     });
 
-    const resetForm = () => setFormData({ name: '', system_prompt: '', telegram_bot_token: '', agent_type: 'chat' });
+    const resetForm = () => setFormData({ name: '', system_prompt: '', telegram_bot_token: '', agent_type: 'chat', webhook_configs: {} });
 
     const fetchAgents = useCallback(async () => {
         try {
@@ -113,9 +119,7 @@ const ChatMonitoring: React.FC = () => {
         setSaving(true);
         try {
             await agentsAPI.create({
-                name: formData.name,
-                system_prompt: formData.system_prompt,
-                telegram_bot_token: formData.telegram_bot_token,
+                ...formData,
                 agent_type: 'chat'
             });
             toast.success('Agent created successfully');
@@ -137,14 +141,16 @@ const ChatMonitoring: React.FC = () => {
                 name: res.data.name,
                 system_prompt: res.data.system_prompt || '',
                 telegram_bot_token: res.data.telegram_bot_token || '',
-                agent_type: 'chat'
+                agent_type: 'chat',
+                webhook_configs: res.data.webhook_configs || {}
             });
         } catch {
             setFormData({
                 name: agent.name,
                 system_prompt: agent.system_prompt || '',
                 telegram_bot_token: agent.telegram_bot_token || '',
-                agent_type: 'chat'
+                agent_type: 'chat',
+                webhook_configs: (agent as any).webhook_configs || {}
             });
         }
         setEditModalOpen(true);
@@ -157,9 +163,7 @@ const ChatMonitoring: React.FC = () => {
         setSaving(true);
         try {
             await agentsAPI.update(configTarget.id, {
-                name: formData.name,
-                system_prompt: formData.system_prompt,
-                telegram_bot_token: formData.telegram_bot_token,
+                ...formData,
                 agent_type: 'chat'
             });
             toast.success('Agent updated successfully');

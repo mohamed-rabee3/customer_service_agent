@@ -1,0 +1,134 @@
+﻿============================================================
+TELEGRAM BOT DIAGNOSTIC
+============================================================
+
+--- Step 1: Checking agents with Telegram bot tokens ---
+[OK] Agent: Permanent Agent (id=a5e7dcd4-ea00-44a0-8953-a348919f9f39)
+   Token source: telegram_bot_token column
+   Token: 8627012748:AAGxCvcIE...
+   Status: idle
+   Has system_prompt: True
+[OK] Agent: Agent A1 (id=d7af1002-f826-4b31-8093-17f09543e6c4)
+   Token source: telegram_bot_token column
+   Token: 8627012748:AAGxCvcIE...
+   Status: in_call
+   Has system_prompt: True
+[OK] Agent: Voice Agent Alpha (id=7ae501dd-009b-48ec-b5a3-ae6583554901)
+   Token source: telegram_bot_token column
+   Token: 8627012748:AAGxCvcIE...
+   Status: in_call
+   Has system_prompt: True
+[OK] Agent: Sales Assistant Bot v2 (id=13546da6-c140-4960-9817-0c00ed93ecd5)
+   Token source: telegram_bot_token column
+   Token: 8627012748:AAGxCvcIE...
+   Status: in_call
+   Has system_prompt: True
+[OK] Agent: Ahmed (id=b05f276e-61dc-475f-9b4c-fe21438e3f32)
+   Token source: telegram_bot_token column
+   Token: 8627012748:AAGxCvcIE...
+   Status: idle
+   Has system_prompt: True
+[OK] Agent: Chat Agent Beta (id=8c7ab36a-7efc-4b61-a1c3-847da073d229)
+   Token source: telegram_bot_token column
+   Token: 8627012748:AAGxCvcIE...
+   Status: idle
+   Has system_prompt: True
+[OK] Agent: Permanent Agent (id=df90105c-1b96-45c0-9c49-438c5e5896bd)
+   Token source: telegram_bot_token column
+   Token: 8627012748:AAGxCvcIE...
+   Status: in_chat
+   Has system_prompt: True
+[OK] Agent: Ahmed (id=04364cb3-1805-40b8-bd72-25a5b75920bf)
+   Token source: telegram_bot_token column
+   Token: 8627012748:AAGxCvcIE...
+   Status: idle
+   Has system_prompt: True
+[OK] Agent: Agent A1 (id=0f547551-5448-4dc8-96ce-987d6040e828)
+   Token source: telegram_bot_token column
+   Token: testtoken123:ABCDEFG...
+   Status: idle
+   Has system_prompt: True
+
+--- Step 2: Validating bot tokens with Telegram API ---
+[OK] Bot token VALID for agent 'Permanent Agent'
+   Bot username: @Ahmedmohamedvvvbot
+   Bot name: Ahmed
+[OK] Bot token VALID for agent 'Agent A1'
+   Bot username: @Ahmedmohamedvvvbot
+   Bot name: Ahmed
+[OK] Bot token VALID for agent 'Voice Agent Alpha'
+   Bot username: @Ahmedmohamedvvvbot
+   Bot name: Ahmed
+[OK] Bot token VALID for agent 'Sales Assistant Bot v2'
+   Bot username: @Ahmedmohamedvvvbot
+   Bot name: Ahmed
+[OK] Bot token VALID for agent 'Ahmed'
+   Bot username: @Ahmedmohamedvvvbot
+   Bot name: Ahmed
+[OK] Bot token VALID for agent 'Chat Agent Beta'
+   Bot username: @Ahmedmohamedvvvbot
+   Bot name: Ahmed
+[OK] Bot token VALID for agent 'Permanent Agent'
+   Bot username: @Ahmedmohamedvvvbot
+   Bot name: Ahmed
+[OK] Bot token VALID for agent 'Ahmed'
+   Bot username: @Ahmedmohamedvvvbot
+   Bot name: Ahmed
+[FAIL] Bot token INVALID for agent 'Agent A1': HTTP 404 - {"ok":false,"error_code":404,"description":"Not Found"}
+
+--- Step 3: Checking current Telegram webhook info ---
+Agent 'Permanent Agent':
+   Webhook URL: https://fine-peas-tie.loca.lt/v1/telegram/04364cb3-1805-40b8-bd72-25a5b75920bf
+   Pending updates: 6
+   Last error: Wrong response from the webhook: 503 Service Unavailable
+   Last error date: 1776259036
+Agent 'Agent A1':
+   Webhook URL: https://fine-peas-tie.loca.lt/v1/telegram/04364cb3-1805-40b8-bd72-25a5b75920bf
+   Pending updates: 6
+   Last error: Wrong response from the webhook: 503 Service Unavailable
+   Last error date: 1776259036
+Agent 'Voice Agent Alpha':
+   Webhook URL: https://fine-peas-tie.loca.lt/v1/telegram/04364cb3-1805-40b8-bd72-25a5b75920bf
+   Pending updates: 6
+   Last error: Wrong response from the webhook: 503 Service Unavailable
+   Last error date: 1776259036
+Agent 'Sales Assistant Bot v2':
+   Webhook URL: https://fine-peas-tie.loca.lt/v1/telegram/04364cb3-1805-40b8-bd72-25a5b75920bf
+   Pending updates: 6
+   Last error: Wrong response from the webhook: 503 Service Unavailable
+   Last error date: 1776259036
+Agent 'Ahmed':
+   Webhook URL: https://fine-peas-tie.loca.lt/v1/telegram/04364cb3-1805-40b8-bd72-25a5b75920bf
+   Pending updates: 6
+   Last error: Wrong response from the webhook: 503 Service Unavailable
+   Last error date: 1776259036
+Agent 'Chat Agent Beta':
+   Webhook URL: https://fine-peas-tie.loca.lt/v1/telegram/04364cb3-1805-40b8-bd72-25a5b75920bf
+   Pending updates: 6
+   Last error: Wrong response from the webhook: 503 Service Unavailable
+   Last error date: 1776259036
+Agent 'Permanent Agent':
+   Webhook URL: https://fine-peas-tie.loca.lt/v1/telegram/04364cb3-1805-40b8-bd72-25a5b75920bf
+   Pending updates: 6
+   Last error: Wrong response from the webhook: 503 Service Unavailable
+   Last error date: 1776259036
+Agent 'Ahmed':
+   Webhook URL: https://fine-peas-tie.loca.lt/v1/telegram/04364cb3-1805-40b8-bd72-25a5b75920bf
+   Pending updates: 6
+   Last error: Wrong response from the webhook: 503 Service Unavailable
+   Last error date: 1776259036
+[FAIL] Error: HTTP Error 404: Not Found
+
+--- Step 4: Checking OpenRouter API key ---
+   API key set: True
+   API key starts with: sk-or-v1-3b2d8c...
+   Model: qwen/qwen3-235b-a22b:free
+[FAIL] OpenRouter API error: HTTP 404
+   Response: {"error":{"message":"No endpoints found for qwen/qwen3-235b-a22b:free.","code":404},"user_id":"user_3CLHQP82GVH1n5Kh0mCkrDTAUwJ"}
+
+--- Step 5: Checking if backend server is running ---
+[FAIL] Backend server NOT reachable: [WinError 10061] No connection could be made because the target machine actively refused it
+
+============================================================
+DIAGNOSTIC COMPLETE
+============================================================

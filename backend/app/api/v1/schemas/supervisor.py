@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.core.constants import AgentStatus, AgentType, SupervisorType
 
@@ -74,7 +74,7 @@ class SupervisorDashboardResponse(BaseModel):
 class SupervisorCreate(BaseModel):
     """Schema for creating a new supervisor (admin only)."""
 
-    email: str = Field(..., description="Email for auth user creation")
+    email: EmailStr = Field(..., description="Email for auth user creation")
     password: str = Field(..., min_length=6, description="Password for auth user")
     supervisor_type: SupervisorType = Field(default=SupervisorType.VOICE, description="Supervisor type")
 

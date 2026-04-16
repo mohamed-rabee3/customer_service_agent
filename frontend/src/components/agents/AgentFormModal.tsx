@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import Icon from '../Icon';
+import { IconProp } from '@fortawesome/fontawesome-svg-core';
 
 interface WebhookConfigs {
     telegram?: { enabled: boolean; bot_token?: string };
@@ -90,21 +92,25 @@ const AgentFormModal: React.FC<FormModalProps> = ({ open, title, formData, onCha
 
                 {/* Tab Navigation */}
                 <div className="flex gap-2 mb-6 modal-stagger-2 overflow-x-auto pb-2">
-                    {['basic', 'telegram', 'whatsapp', 'instagram'].map((tab) => (
+                    {[
+                        { id: 'basic', label: 'Basic', icon: 'file-lines' as IconProp, color: 'var(--text-muted)' },
+                        { id: 'telegram', label: 'Telegram', icon: ['fab', 'telegram'] as IconProp, color: '#0088cc' },
+                        { id: 'whatsapp', label: 'WhatsApp', icon: ['fab', 'whatsapp'] as IconProp, color: '#25D366' },
+                        { id: 'instagram', label: 'Instagram', icon: ['fab', 'instagram'] as IconProp, color: '#E1306C' },
+                    ].map((tab) => (
                         <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab as any)}
-                            className="px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all"
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id as any)}
+                            className="px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-all flex items-center gap-2"
                             style={{
-                                backgroundColor: activeTab === tab ? 'var(--primary)' : 'var(--bg-dark)',
-                                color: activeTab === tab ? 'white' : 'var(--text-muted)',
-                                border: `1px solid ${activeTab === tab ? 'var(--primary)' : 'var(--border)'}`,
+                                backgroundColor: activeTab === tab.id ? (tab.id === 'basic' ? 'var(--primary)' : tab.color) : 'var(--bg-dark)',
+                                color: activeTab === tab.id ? 'white' : 'var(--text-muted)',
+                                border: `1px solid ${activeTab === tab.id ? (tab.id === 'basic' ? 'var(--primary)' : tab.color) : 'var(--border)'}`,
+                                boxShadow: activeTab === tab.id ? `0 4px 12px ${tab.color}44` : 'none',
                             }}
                         >
-                            {tab === 'basic' && '📝 Basic'}
-                            {tab === 'telegram' && '📤 Telegram'}
-                            {tab === 'whatsapp' && '📱 WhatsApp'}
-                            {tab === 'instagram' && '📸 Instagram'}
+                            <Icon icon={tab.icon} size="sm" />
+                            {tab.label}
                         </button>
                     ))}
                 </div>

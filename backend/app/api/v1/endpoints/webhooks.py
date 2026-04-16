@@ -14,7 +14,7 @@ from app.agents.agent_runner import AgentRunner
 from app.api.v1.schemas.webhooks import TelegramUpdate
 from app.api.v1.schemas.webhooks import TelegramUpdate
 from app.core.constants import AgentStatus, InteractionStatus, InteractionType
-from app.db.supabase import get_supabase_client
+from app.db.supabase import get_supabase_client, get_supabase_service_client
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ async def analyze_and_metrics_background_task(session_id: UUID, chat_agent):
     try:
         metrics = await chat_agent.analyze_sentiment()
         
-        db = get_supabase_client()
+        db = get_supabase_service_client()
         metrics_data = {
             "interaction_id": str(session_id),
             "sentiment": metrics["sentiment"],
@@ -90,7 +90,7 @@ async def telegram_webhook(
     customer_text = update.message.text
     call_source_id = f"telegram:{chat_id}"
 
-    db = get_supabase_client()
+    db = get_supabase_service_client()
     now_ts = datetime.now(timezone.utc).isoformat()
 
     # 2. Lookup Agent & Token up front
@@ -114,7 +114,7 @@ async def telegram_webhook(
     session_result = (
         db.table("interactions")
         .select("id")
-        .eq("call_source_ID", call_source_id)
+        .eq("call_source_id", call_source_id)
         .eq("status", InteractionStatus.ACTIVE.value)
         .limit(1)
         .execute()
@@ -158,7 +158,7 @@ async def telegram_webhook(
             "interaction_type": InteractionType.CHAT.value,
             "status": InteractionStatus.ACTIVE.value,
             "started_at": now_ts,
-            "call_source_ID": call_source_id
+            "call_source_id": call_source_id
         }
         interaction_result = db.table("interactions").insert(interaction_data).execute()
         if not interaction_result.data:
