@@ -1,109 +1,103 @@
-"""Agent schemas."""
+"""Agent API request/response schemas."""
 
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.constants import AgentStatus, AgentType
+
+# ========== Request Schemas ==========
 
 
 class CreateAgentRequest(BaseModel):
-    """Request schema for creating a new agent."""
+    """Request schema for creating an agent."""
 
-    model_config = ConfigDict(strict=True)
-
-    name: str = Field(..., min_length=1, max_length=255, description="Agent name")
-    system_prompt: str = Field(..., min_length=1, description="System instructions for the agent")
-    mcp_tools: dict[str, Any] = Field(default_factory=dict, description="MCP tools JSON configuration")
-
-    @field_validator("mcp_tools", mode="before")
-    @classmethod
-    def validate_mcp_tools(cls, v: Any) -> dict[str, Any]:
-        """Validate that mcp_tools is a valid dict/JSON object."""
-        if v is None:
-            return {}
-        if not isinstance(v, dict):
-            raise ValueError("mcp_tools must be a valid JSON object")
-        return v
+    name: str = Field(..., min_length=1, max_length=255, examples=["Voice Agent 1"])
+    system_prompt: str = Field(
+        ...,
+        min_length=1,
+        examples=["You are a helpful customer service agent..."],
+    )
+    mcp_tools: dict[str, Any] = Field(
+        ...,
+        description="MCP tools JSON configuration",
+        examples=[{
+            "tools": [
+                {
+                    "name": "get_customer_details",
+                    "requires_permission": True,
+                    "config": {"endpoint": "https://api.example.com/customers"},
+                }
+            ]
+        }],
+    )
 
 
 class UpdateAgentRequest(BaseModel):
-    """Request schema for updating an agent (partial update)."""
+    """Request schema for updating an agent."""
 
-    model_config = ConfigDict(strict=True)
+    name: str | None = Field(None, min_length=1, max_length=255)
+    system_prompt: str | None = None
+    mcp_tools: dict[str, Any] | None = None
 
-    name: str | None = Field(None, min_length=1, max_length=255, description="Agent name")
-    system_prompt: str | None = Field(None, min_length=1, description="System instructions for the agent")
-    mcp_tools: dict[str, Any] | None = Field(None, description="MCP tools JSON configuration")
 
-    @field_validator("mcp_tools", mode="before")
-    @classmethod
-    def validate_mcp_tools(cls, v: Any) -> dict[str, Any] | None:
-        """Validate that mcp_tools is a valid dict/JSON object."""
-        if v is None:
-            return None
-        if not isinstance(v, dict):
-            raise ValueError("mcp_tools must be a valid JSON object")
-        return v
+class WhisperRequest(BaseModel):
+    """Request schema for sending whisper instructions."""
+
+    instructions: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Instructions to send to agent",
+        examples=["Don't mention pricing. Focus on features."],
+    )
+
+
+# ========== Response Schemas ==========
 
 
 class AgentResponse(BaseModel):
-    """Response schema for agent data."""
+    """Response schema for agent."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    supervisor_id: UUID
     name: str
-    agent_type: AgentType
+    agent_type: str
+    status: str
+    performance_score: float | None = None
+    total_interactions: int = 0
+    tools: list[str] = Field(default_factory=list)
+    created_at: datetime
+
+
+class AgentDetailResponse(AgentResponse):
+    """Detailed agent response with config and current state."""
+
     system_prompt: str
-    status: AgentStatus
     mcp_tools: dict[str, Any]
-    created_at: datetime
-    updated_at: datetime
-
-
-class AgentCreateResponse(BaseModel):
-    """Response schema after creating an agent."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    supervisor_id: UUID
-    name: str
-    agent_type: AgentType
-    status: AgentStatus
-    mcp_tools: dict[str, Any]
-    created_at: datetime
-    updated_at: datetime
+    current_interaction: dict | None = None
+    analytics: dict | None = None
 
 
 class AgentStatusResponse(BaseModel):
-    """Response schema for agent status endpoint."""
-
-    model_config = ConfigDict(from_attributes=True)
+    """Agent status response."""
 
     agent_id: UUID
-    status: AgentStatus
-    current_interaction: dict[str, Any] | None = None
-    realtime_metrics: dict[str, Any] | None = None
+    status: str
+    current_interaction: dict | None = None
+    realtime_metrics: dict | None = None
 
 
-class AgentDetailResponse(BaseModel):
-    """Response schema for detailed agent information."""
+class WhisperResponse(BaseModel):
+    """Response after sending whisper instructions."""
 
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    supervisor_id: UUID
-    name: str
-    agent_type: AgentType
-    system_prompt: str
-    status: AgentStatus
-    mcp_tools: dict[str, Any]
-    created_at: datetime
-    updated_at: datetime
-    current_interaction: dict[str, Any] | None = None
-    analytics: dict[str, Any] | None = None
+    whisper_id: str
+    agent_id: str
+    agent_status: str
+    paused_at: str
+    instructions_sent: bool
+    acknowledged: bool
+    acknowledged_at: str | None = None
+    resumed_at: str | None = None

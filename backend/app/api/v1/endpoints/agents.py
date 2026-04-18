@@ -1,158 +1,177 @@
-"""Agent endpoints - Router layer for agent API."""
+"""Agent API endpoints."""
 
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends
 
+from app.api.deps import get_current_user
 from app.api.v1.schemas.agent import (
-    AgentCreateResponse,
     AgentDetailResponse,
     AgentResponse,
     AgentStatusResponse,
     CreateAgentRequest,
     UpdateAgentRequest,
+    WhisperRequest,
+    WhisperResponse,
 )
 from app.api.v1.schemas.auth import UserResponse
-from app.core.constants import AgentType
-from app.core.security import get_current_user
-from app.services import agent_service
+from app.core.constants import UserRole
+from app.core.exceptions import ForbiddenException
+from app.services.agent_service import AgentService, CreateAgentData, UpdateAgentData
+from app.services.whisper_service import WhisperService
 
 router = APIRouter(prefix="/agents", tags=["Agents"])
 
 
-@router.post(
-    "",
-    response_model=AgentCreateResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create agent",
-    description="Create a new AI agent. Maximum 3 agents per supervisor.",
-)
-async def create_agent(
-    request: CreateAgentRequest,
+def _require_supervisor(user: UserResponse) -> UserResponse:
+    """Ensure user is a supervisor."""
+    if user.role != UserRole.SUPERVISOR:
+        raise ForbiddenException("Only supervisors can manage agents")
+    return user
+
+
+@router.post("", response_model=AgentResponse, status_code=201)
+def create_agent(
+    body: CreateAgentRequest,
     current_user: Annotated[UserResponse, Depends(get_current_user)],
-) -> AgentCreateResponse:
-    """
-    Create a new AI agent for the current supervisor.
+):
+    """Create a new agent for the current supervisor."""
+    user = _require_supervisor(current_user)
+    service = AgentService()
 
-    Raises:
-        400: Maximum 3 agents allowed per supervisor
-        401: Not authenticated
-    """
-    agent_type = AgentType.VOICE
-    if hasattr(current_user.profile, "supervisor_type"):
-        agent_type = AgentType(current_user.profile.supervisor_type.value)
-
-    created_agent = agent_service.create_agent(
-        supervisor_id=current_user.id,
-        request=request,
-        agent_type=agent_type,
+    agent = service.create_agent(
+        supervisor_id=user.id,
+        agent_type=user.profile.supervisor_type,
+        data=CreateAgentData(
+            name=body.name,
+            system_prompt=body.system_prompt,
+            mcp_tools=body.mcp_tools,
+        ),
     )
 
-    return AgentCreateResponse.model_validate(created_agent.model_dump())
+    return AgentResponse(
+        id=agent.id,
+        name=agent.name,
+        agent_type=agent.agent_type.value,
+        status=agent.status.value,
+        tools=list(agent.mcp_tools.get("tools", {}).keys()) if agent.mcp_tools else [],
+        created_at=agent.created_at,
+    )
 
 
-@router.get(
-    "/{agent_id}",
-    response_model=AgentDetailResponse,
-    summary="Get agent details",
-    description="Get detailed information about a specific agent.",
-)
-async def get_agent(
+@router.get("/{agent_id}", response_model=AgentDetailResponse)
+def get_agent(
     agent_id: UUID,
     current_user: Annotated[UserResponse, Depends(get_current_user)],
-) -> AgentDetailResponse:
-    """
-    Get detailed agent information including current interaction and analytics.
+):
+    """Get agent details (owner supervisor only)."""
+    user = _require_supervisor(current_user)
+    service = AgentService()
+    detail = service.get_agent_detail(agent_id, user.id)
+    agent = detail["agent"]
+    interaction = detail["current_interaction"]
 
-    Raises:
-        401: Not authenticated
-        403: Not authorized to access this agent
-        404: Agent not found
-    """
-    agent_detail = agent_service.get_agent_detail(
-        agent_id=agent_id,
-        supervisor_id=current_user.id,
+    return AgentDetailResponse(
+        id=agent.id,
+        name=agent.name,
+        agent_type=agent.agent_type.value,
+        status=agent.status.value,
+        system_prompt=agent.system_prompt,
+        mcp_tools=agent.mcp_tools,
+        tools=list(agent.mcp_tools.get("tools", {}).keys()) if agent.mcp_tools else [],
+        created_at=agent.created_at,
+        current_interaction={
+            "id": str(interaction.id),
+            "status": interaction.status.value,
+            "started_at": interaction.started_at.isoformat(),
+        }
+        if interaction
+        else None,
     )
 
-    return AgentDetailResponse.model_validate(agent_detail)
+
+@router.put("/{agent_id}", response_model=AgentResponse)
+def update_agent(
+    agent_id: UUID,
+    body: UpdateAgentRequest,
+    current_user: Annotated[UserResponse, Depends(get_current_user)],
+):
+    """Update agent configuration (owner supervisor, idle only)."""
+    user = _require_supervisor(current_user)
+    service = AgentService()
+
+    agent = service.update_agent(
+        agent_id=agent_id,
+        supervisor_id=user.id,
+        data=UpdateAgentData(
+            name=body.name,
+            system_prompt=body.system_prompt,
+            mcp_tools=body.mcp_tools,
+        ),
+    )
+
+    return AgentResponse(
+        id=agent.id,
+        name=agent.name,
+        agent_type=agent.agent_type.value,
+        status=agent.status.value,
+        tools=list(agent.mcp_tools.get("tools", {}).keys()) if agent.mcp_tools else [],
+        created_at=agent.created_at,
+    )
 
 
-@router.get(
-    "/{agent_id}/status",
-    response_model=AgentStatusResponse,
-    summary="Get agent current status",
-    description="Get real-time agent status and current interaction.",
-)
-async def get_agent_status(
+@router.delete("/{agent_id}", status_code=204)
+def delete_agent(
     agent_id: UUID,
     current_user: Annotated[UserResponse, Depends(get_current_user)],
-) -> AgentStatusResponse:
-    """
-    Get agent's current status and real-time metrics.
-
-    Raises:
-        401: Not authenticated
-        403: Not authorized to access this agent
-        404: Agent not found
-    """
-    status_data = agent_service.get_agent_status(
-        agent_id=agent_id,
-        supervisor_id=current_user.id,
-    )
-
-    return AgentStatusResponse.model_validate(status_data)
+):
+    """Delete an agent (owner supervisor, idle only)."""
+    user = _require_supervisor(current_user)
+    service = AgentService()
+    service.delete_agent(agent_id, user.id)
 
 
-@router.put(
-    "/{agent_id}",
-    response_model=AgentResponse,
-    summary="Update agent",
-    description="Update agent configuration. Only allowed when agent is idle or paused.",
-)
-async def update_agent(
-    agent_id: UUID,
-    request: UpdateAgentRequest,
-    current_user: Annotated[UserResponse, Depends(get_current_user)],
-) -> AgentResponse:
-    """
-    Update an agent's configuration (partial update).
-
-    Raises:
-        401: Not authenticated
-        403: Not authorized to update this agent
-        404: Agent not found
-        409: Cannot update agent while in active call/chat
-    """
-    updated_agent = agent_service.update_agent(
-        agent_id=agent_id,
-        supervisor_id=current_user.id,
-        request=request,
-    )
-
-    return AgentResponse.model_validate(updated_agent.model_dump())
-
-
-@router.delete(
-    "/{agent_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete agent",
-    description="Delete an agent. Only allowed when agent is idle or paused.",
-)
-async def delete_agent(
+@router.get("/{agent_id}/status", response_model=AgentStatusResponse)
+def get_agent_status(
     agent_id: UUID,
     current_user: Annotated[UserResponse, Depends(get_current_user)],
-) -> None:
-    """
-    Delete an agent.
+):
+    """Get agent current status with live metrics."""
+    user = _require_supervisor(current_user)
+    service = AgentService()
+    result = service.get_agent_status(agent_id, user.id)
+    interaction = result["current_interaction"]
 
-    Raises:
-        401: Not authenticated
-        403: Not authorized to delete this agent
-        404: Agent not found
-        409: Cannot delete agent while in active call/chat
-    """
-    agent_service.delete_agent(
-        agent_id=agent_id,
-        supervisor_id=current_user.id,
+    return AgentStatusResponse(
+        agent_id=result["agent_id"],
+        status=result["status"].value,
+        current_interaction={
+            "id": str(interaction.id),
+            "status": interaction.status.value,
+            "started_at": interaction.started_at.isoformat(),
+            "phone_number": interaction.phone_number,
+        }
+        if interaction
+        else None,
+        realtime_metrics=result["realtime_metrics"],
     )
+
+
+@router.post("/{agent_id}/whisper", response_model=WhisperResponse)
+async def send_whisper(
+    agent_id: UUID,
+    body: WhisperRequest,
+    current_user: Annotated[UserResponse, Depends(get_current_user)],
+):
+    """Send whisper instructions to an agent during an active interaction."""
+    user = _require_supervisor(current_user)
+    service = WhisperService()
+
+    result = await service.send_whisper(
+        agent_id=agent_id,
+        supervisor_id=user.id,
+        instructions=body.instructions,
+    )
+
+    return WhisperResponse(**result)

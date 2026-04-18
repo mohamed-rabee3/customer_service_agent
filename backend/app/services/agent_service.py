@@ -1,168 +1,199 @@
-"""Agent service - Business logic layer for agent operations."""
+"""Agent service with business logic."""
 
+import logging
+from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID
 
-from fastapi import HTTPException, status
+from pydantic import BaseModel
 
-from app.api.v1.schemas.agent import CreateAgentRequest, UpdateAgentRequest
-from app.core.constants import MAX_AGENTS_PER_SUPERVISOR, AgentStatus, AgentType
+from app.core.constants import AgentStatus, AgentType, MAX_AGENTS_PER_SUPERVISOR
 from app.core.exceptions import (
     AgentBusyException,
     ForbiddenException,
     NotFoundException,
+    ValidationException,
 )
-from app.repositories.agent_repository import AgentModel, agent_repository
+from app.repositories.agent_repository import AgentRepository
+from app.repositories.interaction_repository import InteractionRepository
+
+logger = logging.getLogger(__name__)
 
 
-def create_agent(
-    supervisor_id: UUID,
-    request: CreateAgentRequest,
-    agent_type: AgentType = AgentType.VOICE,
-) -> AgentModel:
-    """
-    Create a new agent for a supervisor.
-    """
-    current_count = agent_repository.count_by_supervisor(supervisor_id)
+class CreateAgentData(BaseModel):
+    """Data for creating a new agent."""
 
-    if current_count >= MAX_AGENTS_PER_SUPERVISOR:
-        # Max limit is a logic error/validation error using standard HTTP exception
-        # or separate MaxAgentsExceededException if it existed.
-        # Sticking to HTTPException 400 as standard for known bad request logic not covered by provided exceptions.
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Maximum {MAX_AGENTS_PER_SUPERVISOR} agents allowed per supervisor",
-        )
-
-    try:
-        created_agent = agent_repository.create_agent(
-            supervisor_id=supervisor_id,
-            name=request.name,
-            system_prompt=request.system_prompt,
-            mcp_tools=request.mcp_tools,
-            agent_type=agent_type,
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An internal database error occurred while creating the agent.",
-        )
-
-    return created_agent
+    name: str
+    system_prompt: str
+    mcp_tools: dict[str, Any]
 
 
-def get_agent(agent_id: UUID, supervisor_id: UUID) -> AgentModel:
-    """
-    Get agent details by ID with ownership check.
-    """
-    agent = agent_repository.get_by_id(agent_id)
+class UpdateAgentData(BaseModel):
+    """Data for updating an agent."""
 
-    if agent is None:
-        raise NotFoundException("Agent not found")
-
-    if agent.supervisor_id != supervisor_id:
-        raise ForbiddenException("You do not have permission to access this agent")
-
-    return agent
+    name: str | None = None
+    system_prompt: str | None = None
+    mcp_tools: dict[str, Any] | None = None
 
 
-def get_agent_detail(agent_id: UUID, supervisor_id: UUID) -> dict:
-    """
-    Get detailed agent information.
-    """
-    agent = get_agent(agent_id, supervisor_id)
+class AgentService:
+    """Service for agent business logic."""
 
-    current_interaction = None
-    if agent.status in [AgentStatus.IN_CALL, AgentStatus.IN_CHAT]:
-        current_interaction = agent_repository.get_current_interaction(agent_id)
+    def __init__(self):
+        self.agent_repo = AgentRepository()
+        self.interaction_repo = InteractionRepository()
 
-    analytics = agent_repository.get_agent_analytics(agent_id)
+    def create_agent(
+        self,
+        supervisor_id: UUID,
+        agent_type: AgentType,
+        data: CreateAgentData,
+    ):
+        """
+        Create a new agent for a supervisor.
 
-    return {
-        **agent.model_dump(),
-        "current_interaction": current_interaction,
-        "analytics": analytics,
-    }
+        Enforces:
+        - Maximum 3 agents per supervisor
+        - Agent type matches supervisor type
+        """
+        # Check agent count limit
+        count = self.agent_repo.count_by_supervisor(supervisor_id)
+        if count >= MAX_AGENTS_PER_SUPERVISOR:
+            raise ValidationException(
+                f"Maximum {MAX_AGENTS_PER_SUPERVISOR} agents allowed per supervisor"
+            )
 
+        # Build agent data for insertion
+        agent_data = {
+            "supervisor_id": str(supervisor_id),
+            "name": data.name,
+            "agent_type": agent_type.value,
+            "system_prompt": data.system_prompt,
+            "status": AgentStatus.IDLE.value,
+            "mcp_tools": data.mcp_tools,
+        }
 
-def get_agent_status(agent_id: UUID, supervisor_id: UUID) -> dict:
-    """
-    Get agent's current status and real-time metrics.
-    """
-    agent = get_agent(agent_id, supervisor_id)
+        # Use raw insert (not model-based) since we don't have all fields yet
+        try:
+            response = (
+                self.agent_repo.client.table("agents")
+                .insert(agent_data)
+                .execute()
+            )
+            if not response.data:
+                raise Exception("Failed to create agent")
 
-    current_interaction = None
-    realtime_metrics = None
+            from app.models.agent import Agent
 
-    if agent.status in [AgentStatus.IN_CALL, AgentStatus.IN_CHAT]:
-        current_interaction = agent_repository.get_current_interaction(agent_id)
+            return Agent.model_validate(response.data[0])
+        except ValidationException:
+            raise
+        except Exception as e:
+            raise Exception(f"Failed to create agent: {e}") from e
+
+    def get_agent(self, agent_id: UUID, supervisor_id: UUID):
+        """Get agent with ownership check."""
+        agent = self.agent_repo.get_by_id_and_supervisor(agent_id, supervisor_id)
+        if not agent:
+            raise NotFoundException(f"Agent {agent_id} not found")
+        return agent
+
+    def get_agent_detail(self, agent_id: UUID, supervisor_id: UUID):
+        """Get agent with current interaction and analytics."""
+        agent = self.get_agent(agent_id, supervisor_id)
+
+        # Get current active interaction if any
+        current_interaction = self.interaction_repo.get_active_by_agent(agent_id)
+
+        return {
+            "agent": agent,
+            "current_interaction": current_interaction,
+        }
+
+    def update_agent(
+        self,
+        agent_id: UUID,
+        supervisor_id: UUID,
+        data: UpdateAgentData,
+    ):
+        """
+        Update agent configuration.
+
+        Enforces: Agent must be idle (409 if busy).
+        """
+        agent = self.get_agent(agent_id, supervisor_id)
+
+        if agent.status != AgentStatus.IDLE:
+            raise AgentBusyException(
+                "Cannot update agent while in active call/chat"
+            )
+
+        # Build update data
+        update_data = data.model_dump(exclude_none=True)
+        if not update_data:
+            return agent  # Nothing to update
+
+        update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        try:
+            response = (
+                self.agent_repo.client.table("agents")
+                .update(update_data)
+                .eq("id", str(agent_id))
+                .execute()
+            )
+            if not response.data:
+                raise NotFoundException(f"Agent {agent_id} not found")
+
+            from app.models.agent import Agent
+
+            return Agent.model_validate(response.data[0])
+        except (NotFoundException, AgentBusyException):
+            raise
+        except Exception as e:
+            raise Exception(f"Failed to update agent: {e}") from e
+
+    def delete_agent(self, agent_id: UUID, supervisor_id: UUID) -> bool:
+        """Delete agent with ownership check."""
+        agent = self.get_agent(agent_id, supervisor_id)
+
+        # Check if agent is busy
+        if agent.status != AgentStatus.IDLE:
+            raise AgentBusyException(
+                "Cannot delete agent while in active call/chat"
+            )
+
+        return self.agent_repo.delete(agent_id)
+
+    def get_agent_status(self, agent_id: UUID, supervisor_id: UUID):
+        """Get agent status with current interaction and metrics."""
+        agent = self.get_agent(agent_id, supervisor_id)
+        current_interaction = self.interaction_repo.get_active_by_agent(agent_id)
+
+        # Get latest realtime metrics if there's an active interaction
+        realtime_metrics = None
         if current_interaction:
-            realtime_metrics = agent_repository.get_latest_metrics(
-                UUID(current_interaction["id"])
-            )
+            try:
+                metrics_response = (
+                    self.agent_repo.client.table("realtime_metrics")
+                    .select("*")
+                    .eq("interaction_id", str(current_interaction.id))
+                    .order("timestamp", desc=True)
+                    .limit(1)
+                    .execute()
+                )
+                if metrics_response.data:
+                    realtime_metrics = metrics_response.data[0]
+            except Exception:
+                pass  # Metrics are non-critical
 
-    return {
-        "agent_id": agent.id,
-        "status": agent.status,
-        "current_interaction": current_interaction,
-        "realtime_metrics": realtime_metrics,
-    }
+        return {
+            "agent_id": agent.id,
+            "status": agent.status,
+            "current_interaction": current_interaction,
+            "realtime_metrics": realtime_metrics,
+        }
 
-
-def update_agent(
-    agent_id: UUID,
-    supervisor_id: UUID,
-    request: UpdateAgentRequest,
-) -> AgentModel:
-    """
-    Update an agent's configuration.
-    """
-    agent = get_agent(agent_id, supervisor_id)
-
-    # Check if agent is active
-    if agent.status in [AgentStatus.IN_CALL, AgentStatus.IN_CHAT]:
-        raise AgentBusyException("Cannot update agent while in active call/chat")
-
-    # Build data for base repository update (expects Pydantic model usually, but our update handles objects)
-    # The BaseRepository.update expects `data: BaseModel`.
-    # Our request is UpdateAgentRequest which IS a BaseModel.
-    # However, BaseRepository.update replaces fields.
-    # We need to supply only the fields to update.
-    # But BaseRepository.update implementation: `data.model_dump(exclude_none=True)`.
-    # So passing request directly is correct!
-    
-    try:
-        updated_agent = agent_repository.update(agent_id, request)
-    except Exception as e:
-         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An internal database error occurred while updating the agent.",
-        )
-
-    return updated_agent
-
-
-def delete_agent(agent_id: UUID, supervisor_id: UUID) -> None:
-    """
-    Delete an agent.
-    """
-    agent = get_agent(agent_id, supervisor_id)
-
-    # Check if agent is active
-    if agent.status in [AgentStatus.IN_CALL, AgentStatus.IN_CHAT]:
-         raise AgentBusyException("Cannot delete agent while in active call/chat")
-
-    try:
-        agent_repository.delete(agent_id)
-    except Exception as e:
-        # Check for FK violation (ON DELETE RESTRICT in database.sql)
-        error_msg = str(e).lower()
-        if "foreign key constraint" in error_msg or "violates foreign key" in error_msg:
-             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Cannot delete agent that has existing interactions (history). Archive it instead.",
-            )
-            
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An internal database error occurred while deleting the agent.",
-        )
+    def get_agents_by_supervisor(self, supervisor_id: UUID):
+        """Get all agents for a supervisor."""
+        return self.agent_repo.get_by_supervisor(supervisor_id)

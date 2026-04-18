@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Service - Mock Dialer</title>
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a1a;
+            --bg-secondary: #111128;
+            --bg-card: #1a1a3e;
+            --accent: #6c5ce7;
+            --accent-glow: rgba(108, 92, 231, 0.3);
+            --green: #00d68f;
+            --green-glow: rgba(0, 214, 143, 0.3);
+            --red: #ff4757;
+            --red-glow: rgba(255, 71, 87, 0.3);
+            --text: #e0e0f0;
+            --text-dim: #8888aa;
+            --border: #2a2a5a;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        /* Animated background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(ellipse at 30% 30%, rgba(108, 92, 231, 0.08) 0%, transparent 50%),
+                        radial-gradient(ellipse at 70% 70%, rgba(0, 214, 143, 0.05) 0%, transparent 50%);
+            animation: bgDrift 20s ease-in-out infinite;
+            z-index: -1;
+        }
+
+        @keyframes bgDrift {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            33% { transform: translate(2%, 3%) rotate(1deg); }
+            66% { transform: translate(-2%, -1%) rotate(-1deg); }
+        }
+
+        .container {
+            width: 100%;
+            max-width: 420px;
+            padding: 20px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent), #a29bfe);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 6px;
+        }
+
+        .header p {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+
+        /* Phone display */
+        .phone-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 32px 24px;
+            position: relative;
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+        }
+
+        .phone-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+        }
+
+        /* Status indicator */
+        .status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-bottom: 24px;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-dim);
+            transition: all 0.3s;
+        }
+
+        .status-dot.active {
+            background: var(--green);
+            box-shadow: 0 0 12px var(--green-glow);
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.calling {
+            background: #ffa502;
+            box-shadow: 0 0 12px rgba(255, 165, 2, 0.3);
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.3); opacity: 0.7; }
+        }
+
+        /* Agent display */
+        .agent-display {
+            text-align: center;
+            margin-bottom: 28px;
+        }
+
+        .agent-avatar {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent), #a29bfe);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 14px;
+            font-size: 2rem;
+            box-shadow: 0 8px 32px var(--accent-glow);
+            transition: all 0.4s;
+        }
+
+        .agent-avatar.active {
+            box-shadow: 0 8px 40px var(--green-glow);
+            background: linear-gradient(135deg, var(--green), #00b894);
+            animation: avatarPulse 3s ease-in-out infinite;
+        }
+
+        @keyframes avatarPulse {
+            0%, 100% { box-shadow: 0 8px 32px var(--green-glow); }
+            50% { box-shadow: 0 8px 48px var(--green-glow), 0 0 72px rgba(0, 214, 143, 0.15); }
+        }
+
+        .agent-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .agent-type {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+        }
+
+        /* Timer */
+        .timer {
+            font-size: 2.5rem;
+            font-weight: 300;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+            margin-bottom: 8px;
+            min-height: 50px;
+            color: var(--text);
+            letter-spacing: 2px;
+        }
+
+        .timer.calling {
+            font-size: 1rem;
+            color: #ffa502;
+            animation: blink 1.5s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* Audio visualizer */
+        .visualizer {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            height: 40px;
+            margin-bottom: 24px;
+        }
+
+        .visualizer .bar {
+            width: 4px;
+            background: var(--accent);
+            border-radius: 2px;
+            transition: height 0.1s;
+            opacity: 0.3;
+        }
+
+        .visualizer.active .bar {
+            opacity: 1;
+            animation: eq var(--speed) ease-in-out infinite alternate;
+        }
+
+        @keyframes eq {
+            0% { height: 4px; }
+            100% { height: var(--max-h); }
+        }
+
+        /* Buttons */
+        .call-actions {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+
+        .call-btn {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .call-btn.start {
+            background: linear-gradient(135deg, var(--green), #00b894);
+            box-shadow: 0 4px 20px var(--green-glow);
+            color: white;
+        }
+
+        .call-btn.start:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 30px var(--green-glow);
+        }
+
+        .call-btn.end {
+            background: linear-gradient(135deg, var(--red), #ee5a24);
+            box-shadow: 0 4px 20px var(--red-glow);
+            color: white;
+        }
+
+        .call-btn.end:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 30px var(--red-glow);
+        }
+
+        .call-btn.mute {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            color: var(--text);
+        }
+
+        .call-btn.mute:hover {
+            background: var(--border);
+        }
+
+        .call-btn.mute.muted {
+            background: var(--red);
+            border-color: var(--red);
+        }
+
+        .call-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        /* Log */
+        .log-section {
+            margin-top: 24px;
+        }
+
+        .log-section h3 {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+        }
+
+        .log {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px;
+            font-size: 0.7rem;
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            max-height: 140px;
+            overflow-y: auto;
+            line-height: 1.6;
+        }
+
+        .log .entry {
+            opacity: 0;
+            animation: fadeIn 0.3s forwards;
+        }
+
+        .log .time { color: var(--text-dim); }
+        .log .info { color: var(--accent); }
+        .log .success { color: var(--green); }
+        .log .error { color: var(--red); }
+
+        @keyframes fadeIn {
+            to { opacity: 1; }
+        }
+
+        /* Config */
+        .config {
+            margin-bottom: 20px;
+        }
+
+        .config label {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        .config input {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            font-size: 0.85rem;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        .config input:focus {
+            border-color: var(--accent);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎧 Customer Service</h1>
+            <p>Mock Call Dialer</p>
+        </div>
+
+        <div class="config">
+            <label>Backend URL</label>
+            <input type="text" id="backendUrl" value="http://localhost:8000" />
+        </div>
+
+        <div class="phone-card">
+            <div class="status-bar">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Ready</span>
+            </div>
+
+            <div class="agent-display">
+                <div class="agent-avatar" id="agentAvatar">🤖</div>
+                <div class="agent-name" id="agentName">AI Agent</div>
+                <div class="agent-type" id="agentType">Voice Assistant</div>
+            </div>
+
+            <div class="timer" id="timer">00:00</div>
+
+            <div class="visualizer" id="visualizer">
+                <!-- Generated by JS -->
+            </div>
+
+            <div class="call-actions">
+                <button class="call-btn mute" id="muteBtn" disabled onclick="toggleMute()">🎤</button>
+                <button class="call-btn start" id="callBtn" onclick="startCall()">📞</button>
+                <button class="call-btn end" id="endBtn" disabled onclick="endCall()">📵</button>
+            </div>
+        </div>
+
+        <div class="log-section">
+            <h3>Connection Log</h3>
+            <div class="log" id="log"></div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let room = null;
+        let callStartTime = null;
+        let timerInterval = null;
+        let interactionId = null;
+        let isMuted = false;
+
+        // Init visualizer bars
+        const visualizer = document.getElementById('visualizer');
+        for (let i = 0; i < 20; i++) {
+            const bar = document.createElement('div');
+            bar.className = 'bar';
+            bar.style.setProperty('--speed', `${0.3 + Math.random() * 0.5}s`);
+            bar.style.setProperty('--max-h', `${8 + Math.random() * 28}px`);
+            bar.style.animationDelay = `${Math.random() * 0.5}s`;
+            visualizer.appendChild(bar);
+        }
+
+        function log(msg, type = 'info') {
+            const el = document.getElementById('log');
+            const now = new Date().toLocaleTimeString();
+            el.innerHTML += `<div class="entry"><span class="time">${now}</span> <span class="${type}">${msg}</span></div>`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function setStatus(text, dotClass = '') {
+            document.getElementById('statusText').textContent = text;
+            const dot = document.getElementById('statusDot');
+            dot.className = 'status-dot ' + dotClass;
+        }
+
+        function updateTimer() {
+            if (!callStartTime) return;
+            const elapsed = Math.floor((Date.now() - callStartTime) / 1000);
+            const min = String(Math.floor(elapsed / 60)).padStart(2, '0');
+            const sec = String(elapsed % 60).padStart(2, '0');
+            document.getElementById('timer').textContent = `${min}:${sec}`;
+        }
+
+        async function startCall() {
+            const backendUrl = document.getElementById('backendUrl').value.replace(/\/$/, '');
+            const callBtn = document.getElementById('callBtn');
+            const endBtn = document.getElementById('endBtn');
+            const muteBtn = document.getElementById('muteBtn');
+            const timerEl = document.getElementById('timer');
+
+            callBtn.disabled = true;
+            setStatus('Connecting...', 'calling');
+            timerEl.className = 'timer calling';
+            timerEl.textContent = 'Connecting...';
+            log('Requesting interaction...', 'info');
+
+            try {
+                // 1. Request interaction from backend
+                const response = await fetch(`${backendUrl}/v1/interactions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ interaction_type: 'voice' }),
+                });
+
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({ detail: response.statusText }));
+                    throw new Error(err.detail || `HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                interactionId = data.interaction_id;
+                const agent = data.agent;
+
+                log(`Agent assigned: ${agent.name}`, 'success');
+                log(`Room token received`, 'success');
+                document.getElementById('agentName').textContent = agent.name;
+                document.getElementById('agentType').textContent = `${agent.agent_type} agent`;
+
+                // 2. Connect to LiveKit room
+                log('Connecting to LiveKit room...', 'info');
+                room = new LivekitClient.Room({
+                    adaptiveStream: true,
+                    dynacast: true,
+                });
+
+                // Event handlers
+                room.on(LivekitClient.RoomEvent.Connected, () => {
+                    log('Connected to room!', 'success');
+                    setStatus('In Call', 'active');
+                    document.getElementById('agentAvatar').classList.add('active');
+                    visualizer.classList.add('active');
+                    timerEl.className = 'timer';
+                    callStartTime = Date.now();
+                    timerInterval = setInterval(updateTimer, 1000);
+                    endBtn.disabled = false;
+                    muteBtn.disabled = false;
+                });
+
+                room.on(LivekitClient.RoomEvent.Disconnected, (reason) => {
+                    log(`Disconnected: ${reason || 'unknown'}`, 'error');
+                    resetUI();
+                });
+
+                room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, pub, participant) => {
+                    if (track.kind === 'audio') {
+                        log(`Audio track from ${participant.identity}`, 'success');
+                        const audioEl = track.attach();
+                        document.body.appendChild(audioEl);
+                    }
+                });
+
+                room.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
+                    log(`${participant.identity} joined`, 'info');
+                });
+
+                room.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
+                    log(`${participant.identity} left`, 'info');
+                });
+
+                // Connect with audio enabled
+                const livekitUrl = data.livekit_url.replace('wss://', 'wss://');
+                await room.connect(livekitUrl, data.livekit_token);
+
+                // Enable microphone
+                await room.localParticipant.setMicrophoneEnabled(true);
+                log('Microphone enabled', 'success');
+
+            } catch (err) {
+                log(`Error: ${err.message}`, 'error');
+                setStatus('Failed', '');
+                callBtn.disabled = false;
+                timerEl.className = 'timer';
+                timerEl.textContent = '00:00';
+            }
+        }
+
+        async function endCall() {
+            log('Ending call...', 'info');
+            try {
+                if (room) {
+                    await room.disconnect();
+                }
+                // Notify backend
+                if (interactionId) {
+                    const backendUrl = document.getElementById('backendUrl').value.replace(/\/$/, '');
+                    // We skip PATCH since it requires auth - just log it
+                    log(`Interaction ${interactionId} ended`, 'info');
+                }
+            } catch (err) {
+                log(`Disconnect error: ${err.message}`, 'error');
+            }
+            resetUI();
+        }
+
+        function toggleMute() {
+            if (!room) return;
+            isMuted = !isMuted;
+            room.localParticipant.setMicrophoneEnabled(!isMuted);
+            const btn = document.getElementById('muteBtn');
+            btn.textContent = isMuted ? '🔇' : '🎤';
+            btn.classList.toggle('muted', isMuted);
+            log(isMuted ? 'Microphone muted' : 'Microphone unmuted', 'info');
+        }
+
+        function resetUI() {
+            room = null;
+            interactionId = null;
+            callStartTime = null;
+            isMuted = false;
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = null;
+
+            document.getElementById('callBtn').disabled = false;
+            document.getElementById('endBtn').disabled = true;
+            document.getElementById('muteBtn').disabled = true;
+            document.getElementById('muteBtn').textContent = '🎤';
+            document.getElementById('muteBtn').classList.remove('muted');
+            document.getElementById('timer').textContent = '00:00';
+            document.getElementById('timer').className = 'timer';
+            document.getElementById('agentAvatar').classList.remove('active');
+            document.getElementById('visualizer').classList.remove('active');
+            setStatus('Ready', '');
+        }
+    </script>
+</body>
+</html>

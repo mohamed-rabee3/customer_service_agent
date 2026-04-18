@@ -1,100 +1,168 @@
-"""Interaction endpoints."""
-from typing import Dict, Any, List, Optional
-from uuid import UUID
-from fastapi import APIRouter, Depends, Query, HTTPException, status, Body
+"""Interaction API endpoints."""
 
-from app.api.v1.schemas.auth import UserResponse
-from app.api.v1.schemas.interaction import InteractionDetail, Interaction
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query
+
 from app.api.deps import get_current_user
+from app.api.v1.schemas.auth import UserResponse
+from app.api.v1.schemas.interaction import (
+    CreateInteractionRequest,
+    CreateInteractionResponse,
+    InteractionDetailResponse,
+    InteractionListResponse,
+    InteractionResponse,
+    UpdateInteractionRequest,
+)
+from app.api.v1.schemas.agent import AgentResponse
+from app.core.constants import InteractionStatus, UserRole
+from app.core.exceptions import ForbiddenException
 from app.services.interaction_service import InteractionService
 
-router = APIRouter()
+router = APIRouter(prefix="/interactions", tags=["Interactions"])
 
-@router.get("/", response_model=Dict[str, Any])
-async def get_interactions(
-    page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100),
-    status: Optional[str] = None,
-    agent_id: Optional[str] = None,
-    supervisor_id: Optional[UUID] = None,
-    current_user: UserResponse = Depends(get_current_user),
+
+@router.post("", response_model=CreateInteractionResponse, status_code=201)
+async def create_interaction(
+    body: CreateInteractionRequest,
 ):
-    """List interactions."""
-    service = InteractionService()
-    
-    if current_user.role == "admin":
-        if supervisor_id:
-            # Admin can filter by supervisor_id
-            target_agent_ids = await service.get_agent_ids_for_supervisor(supervisor_id)
-        elif agent_id:
-            # Admin can filter by agent_id
-            target_agent_ids = [agent_id]
-        else:
-            # Admin sees all if no filter
-            target_agent_ids = []
-    else:
-        # Supervisor can only see their own agents' interactions
-        allowed_agent_ids = await service.get_agent_ids(current_user.id)
-        
-        if agent_id:
-            if agent_id not in allowed_agent_ids:
-                # Security: If user asks for an agent they don't own, return empty list
-                return {"data": [], "total": 0, "page": page, "limit": limit}
-            target_agent_ids = [agent_id]
-        else:
-            target_agent_ids = allowed_agent_ids
-    
-    return await service.get_interactions(target_agent_ids, page, limit, status)
+    """
+    Start a new interaction (customer-facing, no auth).
 
-@router.get("/{interaction_id}", response_model=InteractionDetail)
-async def get_interaction_detail(
+    Creates a LiveKit room, assigns an idle agent, and returns
+    a token for the customer to join the room.
+    """
+    service = InteractionService()
+    result = await service.create_interaction(
+        interaction_type=body.interaction_type,
+        phone_number=body.phone_number,
+    )
+    agent = result["agent"]
+
+    return CreateInteractionResponse(
+        interaction_id=result["interaction_id"],
+        agent=AgentResponse(
+            id=agent.id,
+            name=agent.name,
+            agent_type=agent.agent_type.value,
+            status="in_call" if body.interaction_type.value == "voice" else "in_chat",
+            tools=[],
+            created_at=agent.created_at,
+        ),
+        livekit_token=result["livekit_token"],
+        livekit_url=result["livekit_url"],
+    )
+
+
+@router.get("", response_model=InteractionListResponse)
+def list_interactions(
+    current_user: Annotated[UserResponse, Depends(get_current_user)],
+    status: InteractionStatus | None = Query(None, description="Filter by status"),
+    agent_id: UUID | None = Query(None, description="Filter by agent ID"),
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(20, ge=1, le=100, description="Items per page"),
+):
+    """List interactions for the supervisor's agents."""
+    if current_user.role != UserRole.SUPERVISOR:
+        raise ForbiddenException("Only supervisors can view interactions")
+
+    service = InteractionService()
+    result = service.list_interactions(
+        supervisor_id=current_user.id,
+        status=status,
+        agent_id=agent_id,
+        page=page,
+        limit=limit,
+    )
+
+    interactions = []
+    for i in result["interactions"]:
+        duration = None
+        if i.end_at and i.started_at:
+            duration = int((i.end_at - i.started_at).total_seconds())
+
+        interactions.append(
+            InteractionResponse(
+                id=i.id,
+                agent_id=i.agent_id,
+                phone_number=i.phone_number,
+                interaction_type=i.interaction_type.value,
+                status=i.status.value,
+                started_at=i.started_at,
+                end_at=i.end_at,
+                duration_seconds=duration,
+            )
+        )
+
+    return InteractionListResponse(
+        interactions=interactions,
+        total=result["total"],
+        page=result["page"],
+        limit=result["limit"],
+    )
+
+
+@router.get("/{interaction_id}", response_model=InteractionDetailResponse)
+def get_interaction(
     interaction_id: UUID,
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: Annotated[UserResponse, Depends(get_current_user)],
 ):
-    """Get interaction details."""
-    service = InteractionService()
-    
-    interaction = await service.get_interaction_detail(interaction_id)
-    if not interaction:
-        raise HTTPException(status_code=404, detail="Interaction not found")
-    
-    # Security: Admin can view any interaction, Supervisor only their own agents
-    if current_user.role != "admin":
-        allowed_agent_ids = await service.get_agent_ids(current_user.id)
-        if str(interaction.agent_id) not in allowed_agent_ids:
-            raise HTTPException(status_code=403, detail="Not authorized to access this interaction")
-        
-    return interaction
+    """Get interaction detail with metrics and permissions."""
+    if current_user.role != UserRole.SUPERVISOR:
+        raise ForbiddenException("Only supervisors can view interactions")
 
-@router.patch("/{interaction_id}", response_model=Interaction)
-async def update_interaction_status(
-    interaction_id: UUID,
-    status: str = Body(..., embed=True),  # Expect JSON body {"status": "val"}
-    current_user: UserResponse = Depends(get_current_user),
-):
-    """Update interaction status."""
     service = InteractionService()
-    
-    # Security: Verify ownership
-    # 1. Admin Bypass
-    if current_user.role == "admin":
-        pass # Admin can update anything
-    else:
-        # 2. Supervisor Check
-        allowed_agent_ids = await service.get_agent_ids(current_user.id)
-        
-        # Check interaction existence
-        existing = await service.get_interaction_detail(interaction_id)
-        if not existing:
-             raise HTTPException(status_code=404, detail="Interaction not found")
-        
-        if str(existing.agent_id) not in allowed_agent_ids:
-             raise HTTPException(status_code=403, detail="Not authorized to update this interaction")
-    
-    # Update
-    interaction = await service.update_interaction_status(interaction_id, status)
-    
-    if not interaction:
-         raise HTTPException(status_code=404, detail="Interaction not found")
-        
-    return interaction
+    result = service.get_interaction_detail(interaction_id)
+    i = result["interaction"]
+    duration = None
+    if i.end_at and i.started_at:
+        duration = int((i.end_at - i.started_at).total_seconds())
+
+    return InteractionDetailResponse(
+        id=i.id,
+        agent_id=i.agent_id,
+        phone_number=i.phone_number,
+        interaction_type=i.interaction_type.value,
+        status=i.status.value,
+        started_at=i.started_at,
+        end_at=i.end_at,
+        duration_seconds=duration,
+        call_source_id=i.call_source_id,
+        realtime_metrics=result["realtime_metrics"],
+        tool_permissions=result["tool_permissions"],
+    )
+
+
+@router.patch("/{interaction_id}", response_model=InteractionResponse)
+async def update_interaction(
+    interaction_id: UUID,
+    body: UpdateInteractionRequest,
+    current_user: Annotated[UserResponse, Depends(get_current_user)],
+):
+    """Update interaction status or phone number."""
+    if current_user.role != UserRole.SUPERVISOR:
+        raise ForbiddenException("Only supervisors can update interactions")
+
+    service = InteractionService()
+    status = InteractionStatus(body.status) if body.status else None
+    updated = await service.update_interaction(
+        interaction_id=interaction_id,
+        status=status,
+        phone_number=body.phone_number,
+    )
+
+    duration = None
+    if updated.end_at and updated.started_at:
+        duration = int((updated.end_at - updated.started_at).total_seconds())
+
+    return InteractionResponse(
+        id=updated.id,
+        agent_id=updated.agent_id,
+        phone_number=updated.phone_number,
+        interaction_type=updated.interaction_type.value,
+        status=updated.status.value,
+        started_at=updated.started_at,
+        end_at=updated.end_at,
+        duration_seconds=duration,
+    )

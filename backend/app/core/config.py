@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # CORS Configuration
-    cors_origins: str = "http://localhost:5173,http://localhost:3000"
+    cors_origins: str = "*"
 
     # LiveKit Configuration
     livekit_url: str = ""
@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     # AI Services
     gemini_api_key: str = ""
     groq_api_key: str = ""
+
+    # ElevenLabs TTS
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"  # Rachel — female
+    elevenlabs_model: str = "eleven_flash_v2_5"  # ~75ms latency, realtime
 
     @property
     def cors_origins_list(self) -> list[str]:
