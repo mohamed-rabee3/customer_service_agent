@@ -1,6 +1,6 @@
 """Supervisor repository - Data access layer for supervisors table."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -85,6 +85,26 @@ class SupervisorRepository(BaseRepository[SupervisorModel]):
         except Exception as e:
             raise Exception(f"Failed to fetch supervisor {id}: {str(e)}") from e
 
+    def touch_monitoring_presence(self, supervisor_id: UUID) -> None:
+        """Bump updated_at so inbound routing treats this supervisor as monitoring."""
+        now = datetime.now(timezone.utc).isoformat()
+        self.client.table(self.table_name).update({"updated_at": now}).eq(
+            "userID", str(supervisor_id)
+        ).execute()
+
+    def list_user_ids_active_since(self, since: datetime) -> list[UUID]:
+        """Supervisors with updated_at >= since (used for call routing)."""
+        since_iso = since.astimezone(timezone.utc).isoformat()
+        response = (
+            self.client.table(self.table_name)
+            .select("userID")
+            .gte("updated_at", since_iso)
+            .execute()
+        )
+        if not response.data:
+            return []
+        return [UUID(row["userID"]) for row in response.data]
+
     def get_dashboard_data(self, supervisor_id: UUID) -> list[dict[str, Any]]:
         """
         Get aggregated dashboard data for a supervisor.
@@ -142,7 +162,7 @@ class SupervisorRepository(BaseRepository[SupervisorModel]):
             agent_data["current_interaction"] = current_int
             agent_data["latest_metrics"] = latest_metrics
             enriched_agents.append(agent_data)
-            
+
         return enriched_agents
 
     def get_agents_by_supervisor(self, supervisor_id: UUID) -> list[dict[str, Any]]:

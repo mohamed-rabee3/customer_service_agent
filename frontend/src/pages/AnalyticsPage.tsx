@@ -11,6 +11,47 @@ import {
 import { Phone, MessageCircle, Timer, Target, Activity, TrendingUp, Zap } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { analyticsAPI } from "../services/analyticsService";
+import { supervisorsAPI } from "../services/supervisorsService";
+
+function mapUiPeriodToApi(
+    period: string
+): "today" | "week" | "month" | "all_time" {
+    switch (period) {
+        case "today":
+        case "yesterday":
+            return "today";
+        case "last7days":
+            return "week";
+        case "last30days":
+        case "thismonth":
+        case "lastmonth":
+            return "month";
+        default:
+            return "all_time";
+    }
+}
+
+function secondsToHms(sec: number): string {
+    if (sec == null || Number.isNaN(sec) || sec <= 0) return "00:00:00";
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = Math.floor(sec % 60);
+    return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
+}
+
+function buildChartFromTotal(total: number): { time: string; interactions: number }[] {
+    const slots = ["8am", "10am", "12pm", "2pm", "4pm", "6pm"];
+    if (!total || total <= 0) {
+        return slots.map((time) => ({ time, interactions: 0 }));
+    }
+    const base = Math.floor(total / slots.length);
+    let rem = total - base * slots.length;
+    return slots.map((time) => {
+        const n = base + (rem > 0 ? 1 : 0);
+        if (rem > 0) rem -= 1;
+        return { time, interactions: n };
+    });
+}
 
 // ==================
 // Helper Functions
@@ -34,6 +75,12 @@ const getResolutionTimeColor = (timeStr: string) => {
         return "var(--warning)";
     }
 };
+
+/** Human-readable % (API returns full float precision). */
+function formatPercentDisplay(n: number, fractionDigits = 1): string {
+    if (n == null || Number.isNaN(Number(n))) return "0";
+    return Number(n).toFixed(fractionDigits);
+}
 
 const formatResolutionTime = (timeStr: string): string => {
     if (!timeStr) return "0s";
@@ -259,38 +306,78 @@ const AnalyticsPage: React.FC = () => {
         setIsLoading(true);
         const fetchAnalytics = async () => {
             try {
-                if (userId) {
-                    const res = await analyticsAPI.getBySupervisor(userId);
-                    const data = res.data;
-                    setMetrics({
-                        fcr: data.fcr ?? 0,
-                        totalCalls: data.total_interactions ?? 0,
-                        resolutionTime: data.avg_resolution_time ?? "00:00:00",
-                        supervisorPerformance: data.performance ?? 0,
-                        csat: data.csat ?? 0,
-                    });
-                    if (data.chart_data && Array.isArray(data.chart_data)) {
-                        setChartData(data.chart_data);
-                    } else {
-                        setChartData(
-                            ["8am", "10am", "12pm", "2pm", "4pm", "6pm"].map((time) => ({
-                                time,
-                                interactions: 0,
-                            }))
-                        );
+                if (!userId) return;
+
+                const apiPeriod = mapUiPeriodToApi(selectedPeriod);
+
+                if (role === "admin") {
+                    const supRes = await supervisorsAPI.getAll();
+                    const supervisors = supRes.data?.supervisors ?? [];
+                    if (supervisors.length === 0) {
+                        setMetrics({
+                            fcr: 0,
+                            totalCalls: 0,
+                            resolutionTime: "00:00:00",
+                            supervisorPerformance: 0,
+                            csat: 0,
+                        });
+                        setChartData(buildChartFromTotal(0));
+                        return;
                     }
+                    let totalInteractions = 0;
+                    let weightedFcr = 0;
+                    let weightedPerf = 0;
+                    let weightedCsat = 0;
+                    let weightedAht = 0;
+                    for (const s of supervisors) {
+                        const r = await analyticsAPI.getBySupervisor(String(s.id), apiPeriod);
+                        const d = r.data;
+                        const n = d.total_interactions ?? 0;
+                        if (n <= 0) continue;
+                        totalInteractions += n;
+                        weightedFcr += (d.fcr_percentage ?? 0) * n;
+                        weightedPerf += (d.performance_score ?? 0) * n;
+                        weightedCsat += (d.avg_csat ?? 0) * n;
+                        weightedAht += (d.avg_handle_time ?? 0) * n;
+                    }
+                    const t = totalInteractions;
+                    setMetrics({
+                        fcr: t ? weightedFcr / t : 0,
+                        totalCalls: totalInteractions,
+                        resolutionTime: secondsToHms(t ? weightedAht / t : 0),
+                        supervisorPerformance: t ? Math.round(weightedPerf / t) : 0,
+                        csat: t ? weightedCsat / t : 0,
+                    });
+                    setChartData(buildChartFromTotal(totalInteractions));
+                    return;
                 }
+
+                const res = await analyticsAPI.getBySupervisor(userId, apiPeriod);
+                const data = res.data;
+                setMetrics({
+                    fcr: data.fcr_percentage ?? 0,
+                    totalCalls: data.total_interactions ?? 0,
+                    resolutionTime: secondsToHms(data.avg_handle_time ?? 0),
+                    supervisorPerformance: Math.round(data.performance_score ?? 0),
+                    csat: data.avg_csat ?? 0,
+                });
+                setChartData(buildChartFromTotal(data.total_interactions ?? 0));
             } catch (err) {
-                console.error('Failed to fetch analytics', err);
-                // Show zeroed data on error
-                setMetrics({ fcr: 0, totalCalls: 0, resolutionTime: "00:00:00", supervisorPerformance: 0, csat: 0 });
-                setChartData(["8am", "10am", "12pm", "2pm", "4pm", "6pm"].map((time) => ({ time, interactions: 0 })));
+                console.error("Failed to fetch analytics", err);
+                setMetrics({
+                    fcr: 0,
+                    totalCalls: 0,
+                    resolutionTime: "00:00:00",
+                    supervisorPerformance: 0,
+                    csat: 0,
+                });
+                setChartData(buildChartFromTotal(0));
             } finally {
                 setIsLoading(false);
             }
         };
         fetchAnalytics();
-    }, [selectedPeriod, selectedType, selectedDate, userId]);
+    }, [selectedPeriod, selectedType, selectedDate, userId, role]);
 
     return (
         <div className="min-h-screen w-full" style={{ backgroundColor: 'var(--bg)' }}>
@@ -448,7 +535,7 @@ const AnalyticsPage: React.FC = () => {
                             {/* KPI Cards Grid - Responsive */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-8 md:mb-12">
                                 <KpiCard
-                                    value={`${metrics.fcr}%`}
+                                    value={`${formatPercentDisplay(metrics.fcr)}%`}
                                     label="First Contact Resolution"
                                     color={getColor(metrics.fcr)}
                                     icon={<Target size={28} strokeWidth={1.2} />}
@@ -543,7 +630,7 @@ const AnalyticsPage: React.FC = () => {
                                                 letterSpacing: '-0.02em',
                                             }}
                                         >
-                                            {metrics.supervisorPerformance}%
+                                            {formatPercentDisplay(metrics.supervisorPerformance)}%
                                         </div>
 
                                         {/* Trend */}

@@ -1,5 +1,5 @@
 // src/pages/admin/AdminArchive.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -24,8 +24,9 @@ import {
 import Icon from '../../components/Icon';
 import SupervisorFormModal from '../../components/modals/SupervisorFormModal';
 import DeleteConfirmModal from '../../components/modals/DeleteConfirmModal';
-import { X, Clock, Phone, User, CheckCircle, AlertTriangle, MessageSquare, Play, Pause } from 'lucide-react';
+import { X, Clock, Phone, CheckCircle, AlertTriangle } from 'lucide-react';
 import { supervisorsAPI } from '../../services/supervisorsService';
+import { analyticsAPI } from '../../services/analyticsService';
 
 import {
   faInfoCircle,
@@ -48,43 +49,13 @@ interface Supervisor {
   failed: number;
 }
 
-/* Timeline mock data for drawer */
-const getTimelineEvents = (name: string) => [
-  { time: '14:32:00', label: 'Call Started', type: 'start' as const, detail: `${name} connected with customer` },
-  { time: '14:33:15', label: 'Issue Identified', type: 'info' as const, detail: 'Customer reported billing discrepancy' },
-  { time: '14:35:40', label: 'Intervention', type: 'warning' as const, detail: 'Supervisor injected coaching message' },
-  { time: '14:36:50', label: 'Resolution Applied', type: 'success' as const, detail: 'Credit applied to customer account' },
-  { time: '14:37:02', label: 'Call Ended', type: 'end' as const, detail: 'Customer satisfaction confirmed' },
-];
-
-/* Mini Waveform Component */
-const MiniWaveform: React.FC<{ isPlaying: boolean }> = ({ isPlaying }) => {
-  const bars = 40;
-  return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: '2px', height: 48, px: 1 }}>
-      {Array.from({ length: bars }).map((_, i) => {
-        const h = 12 + Math.sin(i * 0.6) * 18 + Math.random() * 10;
-        return (
-          <Box
-            key={i}
-            sx={{
-              width: 3,
-              height: `${h}px`,
-              borderRadius: 2,
-              bgcolor: isPlaying ? 'var(--accent-hex)' : 'var(--border)',
-              transition: 'background-color 0.3s ease',
-              animation: isPlaying ? `waveAnim 0.8s ease-in-out ${i * 0.03}s infinite alternate` : 'none',
-              '@keyframes waveAnim': {
-                '0%': { transform: 'scaleY(1)' },
-                '100%': { transform: `scaleY(${0.4 + Math.random() * 0.6})` },
-              },
-            }}
-          />
-        );
-      })}
-    </Box>
-  );
-};
+function formatAvgHandleSeconds(sec: number | undefined | null): string {
+  if (sec == null || Number.isNaN(Number(sec)) || sec <= 0) return '—';
+  const s = Math.floor(Number(sec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, '0')}`;
+}
 
 /* Spring row animation keyframes injected via sx */
 const springRowSx = (idx: number) => ({
@@ -110,7 +81,6 @@ const AdminArchive: React.FC = () => {
   /* Drawer state */
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerSupervisor, setDrawerSupervisor] = useState<Supervisor | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
 
   /* Animate key to retrigger spring on filter change */
   const [animKey, setAnimKey] = useState(0);
@@ -127,12 +97,13 @@ const AdminArchive: React.FC = () => {
         for (const s of rawSups) {
           let interventions = 0;
           let performance = 0;
+          let avgTime = '—';
           try {
-            // Lazy load analytics inline for realism without massive backend rewrite
             const statRes = await analyticsAPI.getBySupervisor(s.id);
             if (statRes.data) {
-                interventions = statRes.data.total_interventions || 0;
-                performance = Math.round(statRes.data.avg_performance || 0);
+                interventions = statRes.data.total_interactions ?? 0;
+                performance = Math.round(statRes.data.performance_score ?? 0);
+                avgTime = formatAvgHandleSeconds(statRes.data.avg_handle_time);
             }
           } catch (e) {
              console.error("Failed to load analytics for supervisor", s.id);
@@ -146,7 +117,7 @@ const AdminArchive: React.FC = () => {
             status: 'Active',
             interventions: interventions,
             performance: performance,
-            avgTime: '4:21', // Still mock as backend doesn't aggregate avg processing time easily yet
+            avgTime,
             failed: 0,
           });
         }
@@ -212,17 +183,6 @@ const AdminArchive: React.FC = () => {
   const openDrawer = (sup: Supervisor) => {
     setDrawerSupervisor(sup);
     setDrawerOpen(true);
-    setIsPlaying(false);
-  };
-
-  const timelineColor = (type: string) => {
-    switch (type) {
-      case 'start': return 'var(--accent-hex)';
-      case 'success': return 'var(--success)';
-      case 'warning': return 'var(--warning)';
-      case 'end': return 'var(--text-muted)';
-      default: return 'var(--info)';
-    }
   };
 
   return (
@@ -390,40 +350,9 @@ const AdminArchive: React.FC = () => {
 
               <Divider sx={{ my: 3 }} />
 
-              {/* Timeline View */}
-              <Typography variant="subtitle1" fontWeight={700} color="var(--text-main)" sx={{ mb: 2 }}>Call Timeline</Typography>
-              <Box sx={{ position: 'relative', pl: 3 }}>
-                {/* Vertical line */}
-                <Box sx={{ position: 'absolute', left: 8, top: 4, bottom: 4, width: 2, bgcolor: 'var(--border)', borderRadius: 2 }} />
-                {getTimelineEvents(drawerSupervisor.name).map((ev, i) => (
-                  <Box key={i} sx={{ position: 'relative', mb: 2.5 }}>
-                    {/* Dot */}
-                    <Box sx={{ position: 'absolute', left: -19, top: 4, width: 12, height: 12, borderRadius: '50%', bgcolor: timelineColor(ev.type), border: '2px solid var(--bg)', boxShadow: `0 0 0 3px ${timelineColor(ev.type)}33` }} />
-                    <Typography variant="caption" color="var(--text-muted)" fontWeight={600}>{ev.time}</Typography>
-                    <Typography variant="body2" fontWeight={700} color="var(--text-main)">{ev.label}</Typography>
-                    <Typography variant="body2" color="var(--text-secondary)" sx={{ fontSize: '0.8rem' }}>{ev.detail}</Typography>
-                  </Box>
-                ))}
-              </Box>
-
-              <Divider sx={{ my: 3 }} />
-
-              {/* Mini Waveform Audio Player */}
-              <Typography variant="subtitle1" fontWeight={700} color="var(--text-main)" sx={{ mb: 2 }}>Call Recording</Typography>
-              <Box sx={{ p: 2, borderRadius: 'var(--radius-md)', bgcolor: 'var(--surface)', border: '1px solid var(--border)' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                  <IconButton
-                    onClick={() => setIsPlaying(!isPlaying)}
-                    sx={{ bgcolor: 'var(--accent-hex)', color: '#fff', width: 40, height: 40, '&:hover': { bgcolor: 'var(--primary-hex)' } }}
-                  >
-                    {isPlaying ? <Pause size={18} /> : <Play size={18} />}
-                  </IconButton>
-                  <Box sx={{ flex: 1, overflow: 'hidden' }}>
-                    <MiniWaveform isPlaying={isPlaying} />
-                  </Box>
-                  <Typography variant="caption" color="var(--text-muted)" fontWeight={600}>{drawerSupervisor.avgTime}</Typography>
-                </Box>
-              </Box>
+              <Typography variant="body2" color="var(--text-secondary)" sx={{ lineHeight: 1.65 }}>
+                Per-call transcripts, timelines, and recordings are shown in the supervisor archive and monitoring views.
+              </Typography>
             </Box>
           </Box>
         )}

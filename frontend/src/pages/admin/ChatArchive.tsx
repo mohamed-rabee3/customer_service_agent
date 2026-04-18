@@ -10,6 +10,7 @@ import {
 import { MessageSquare, ChevronDown, TrendingUp, Tag } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { archivesAPI } from '../../services/archivesService';
+import { displayPhoneOrSynthetic } from '../../utils/phoneDisplay';
 
 interface ChatLog {
   id: string;
@@ -71,22 +72,42 @@ const ChatArchive: React.FC = () => {
     const fetchArchives = async () => {
       try {
         const res = await archivesAPI.getAll();
-        const data = res.data;
-        const archives = Array.isArray(data) ? data : data.items || data.archives || [];
+        const payload = res.data as { data?: Record<string, unknown>[] };
+        const archives = Array.isArray(payload?.data) ? payload.data : [];
         const mapped: ChatLog[] = archives
-          .filter((a: any) => a.channel === 'chat')
-          .map((a: any) => ({
-            id: a.id,
-            customer: a.customer_name || a.caller || 'Unknown',
-            time: new Date(a.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            date: new Date(a.created_at || Date.now()).toISOString().split('T')[0],
-            duration: a.duration || '0:00',
-            messagePreview: a.message_preview || a.summary || 'No preview available',
-            status: (a.status === 'completed' || a.status === 'resolved' ? 'Resolved' : a.status === 'pending' ? 'Pending' : 'Escalated') as ChatLog['status'],
-            satisfaction: a.satisfaction ?? 0,
-            summary: a.summary || 'No summary available',
-            tags: a.tags || [],
-          }));
+          .filter((a) => String((a as { type?: string }).type ?? '').toLowerCase() === 'chat')
+          .map((a) => {
+            const row = a as Record<string, unknown>;
+            const started = row.started_at ? new Date(String(row.started_at)) : new Date();
+            const sec = row.duration_seconds != null ? Number(row.duration_seconds) : null;
+            const dur =
+              sec != null && !Number.isNaN(sec)
+                ? `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`
+                : '0:00';
+            const tagsRaw = row.tags;
+            const tagsArr = Array.isArray(tagsRaw)
+              ? tagsRaw.map((x) => String(x))
+              : typeof tagsRaw === 'object' && tagsRaw !== null
+                ? Object.entries(tagsRaw as Record<string, unknown>).map(([k, v]) => `${k}:${String(v)}`)
+                : [];
+            const rowId = String(row.id ?? '');
+            const previewBase = row.message_preview ?? row.summary;
+            return {
+            id: rowId,
+            customer: displayPhoneOrSynthetic(
+              rowId,
+              (row.phone_number ?? row.customer_name ?? row.caller) as string | undefined,
+            ),
+            time: started.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            date: started.toISOString().split('T')[0],
+            duration: dur,
+            messagePreview: String(previewBase ?? ''),
+            status: (row.status === 'completed' || row.status === 'resolved' ? 'Resolved' : row.status === 'pending' ? 'Pending' : 'Escalated') as ChatLog['status'],
+            satisfaction: Number(row.overall_performance ?? row.csat_score ?? row.satisfaction ?? 0) || 0,
+            summary: String(row.summary ?? ''),
+            tags: tagsArr,
+          };
+          });
         setChatLogs(mapped);
       } catch (err) {
         console.error('Failed to fetch archives', err);
@@ -146,7 +167,7 @@ const ChatArchive: React.FC = () => {
                       </Stack>
                     </Box>
                     <Typography variant="body2" color="var(--text-secondary)" sx={{ mb: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {log.messagePreview}
+                      {log.messagePreview.trim() ? log.messagePreview : '—'}
                     </Typography>
                     <Stack direction="row" spacing={1} alignItems="center">
                       <Chip label={log.status} size="small" sx={{ bgcolor: sc.bg, color: sc.fg, fontWeight: 600 }} />
@@ -180,7 +201,7 @@ const ChatArchive: React.FC = () => {
                               <Typography variant="caption" fontWeight={700} color="var(--accent-hex)" sx={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>Problem Summary</Typography>
                             </Box>
                             <Typography variant="body2" color="var(--text-main)" sx={{ mb: 2, lineHeight: 1.7, fontWeight: 400 }}>
-                              {log.summary}
+                              {log.summary.trim() ? log.summary : '—'}
                             </Typography>
 
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>

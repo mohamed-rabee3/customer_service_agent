@@ -2,14 +2,23 @@ import React, { useState, useRef, useCallback } from 'react';
 import { Signal } from 'lucide-react';
 import AgentAvatar from './AgentAvatar';
 
+type AgentBackendStatus = 'idle' | 'in_call' | 'in_chat' | 'paused';
+
 interface VoiceAgent {
-  id: number;
+  id: string;
   name: string;
-  status: 'active' | 'idle';
+  status: AgentBackendStatus;
   sentiment: string;
   performance: string;
   feed: string;
 }
+
+const STATUS_LABEL: Record<AgentBackendStatus, string> = {
+  idle: 'IDLE',
+  in_call: 'IN CALL',
+  in_chat: 'IN CHAT',
+  paused: 'PAUSED',
+};
 
 interface VoiceAgentCardProps {
   agent: VoiceAgent;
@@ -59,9 +68,9 @@ const VoiceAgentCard: React.FC<VoiceAgentCardProps> = ({ agent, index, isSelecte
         <div className="flex items-center gap-2">
           <span
             className="text-xs font-semibold uppercase tracking-widest"
-            style={{ color: agent.status === 'active' ? 'var(--success)' : 'var(--text-muted)' }}
+            style={{ color: agent.status === 'idle' ? 'var(--text-muted)' : 'var(--success)' }}
           >
-            {agent.status}
+            {STATUS_LABEL[agent.status] ?? agent.status}
           </span>
         </div>
         <Signal size={18} style={{ color: 'var(--text-muted)' }} />
@@ -69,7 +78,7 @@ const VoiceAgentCard: React.FC<VoiceAgentCardProps> = ({ agent, index, isSelecte
 
       <div className="flex justify-center mb-4">
         <div className="agent-avatar-hover-scale">
-          <AgentAvatar name={agent.name} status={agent.status} size="md" />
+          <AgentAvatar name={agent.name} status={agent.status === 'idle' ? 'idle' : 'active'} size="md" />
         </div>
       </div>
 

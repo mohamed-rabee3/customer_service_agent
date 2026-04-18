@@ -10,6 +10,7 @@ import {
 import { Phone, Clock, ChevronDown, TrendingUp, Tag } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { archivesAPI } from '../../services/archivesService';
+import { displayPhoneOrSynthetic } from '../../utils/phoneDisplay';
 
 interface CallLog {
   id: string;
@@ -62,6 +63,14 @@ const SatisfactionGauge: React.FC<{ score: number }> = ({ score }) => {
   );
 };
 
+function formatDurationSeconds(sec: number | null | undefined): string {
+  if (sec == null || Number.isNaN(Number(sec))) return '0:00';
+  const s = Math.max(0, Math.floor(Number(sec)));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, '0')}`;
+}
+
 const VoiceArchive: React.FC = () => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [callLogs, setCallLogs] = useState<CallLog[]>([]);
@@ -71,22 +80,39 @@ const VoiceArchive: React.FC = () => {
     const fetchArchives = async () => {
       try {
         const res = await archivesAPI.getAll();
-        const data = res.data;
-        const archives = Array.isArray(data) ? data : data.items || data.archives || [];
+        const payload = res.data as { data?: Record<string, unknown>[] };
+        const archives = Array.isArray(payload?.data) ? payload.data : [];
         const mapped: CallLog[] = archives
-          .filter((a: Record<string, any>) => a.channel === 'voice' || !a.channel)
-          .map((a: Record<string, any>) => ({
-            id: a.id,
-            caller: a.customer_name || a.caller || 'Unknown',
-            time: new Date(a.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            date: new Date(a.created_at || Date.now()).toISOString().split('T')[0],
-            duration: a.duration || '0:00',
-            status: (a.status === 'completed' ? 'Completed' : a.status === 'missed' ? 'Missed' : 'Failed') as CallLog['status'],
-            performance: a.performance ?? 0,
-            satisfaction: a.satisfaction ?? 0,
-            summary: a.summary || 'No summary available',
-            tags: a.tags || [],
-          }));
+          .filter((a) => {
+            const t = String((a as { type?: string }).type ?? '').toLowerCase();
+            return t === 'voice';
+          })
+          .map((a) => {
+            const row = a as Record<string, unknown>;
+            const started = row.started_at ? new Date(String(row.started_at)) : new Date();
+            const tagsRaw = row.tags;
+            const tagsArr = Array.isArray(tagsRaw)
+              ? tagsRaw.map((x) => String(x))
+              : typeof tagsRaw === 'object' && tagsRaw !== null
+                ? Object.entries(tagsRaw as Record<string, unknown>).map(([k, v]) => `${k}:${String(v)}`)
+                : [];
+            const rowId = String(row.id ?? '');
+            return {
+            id: rowId,
+            caller: displayPhoneOrSynthetic(
+              rowId,
+              (row.phone_number ?? row.customer_name ?? row.caller) as string | undefined,
+            ),
+            time: started.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            date: started.toISOString().split('T')[0],
+            duration: formatDurationSeconds(row.duration_seconds as number | undefined),
+            status: (row.status === 'completed' ? 'Completed' : row.status === 'missed' ? 'Missed' : 'Failed') as CallLog['status'],
+            performance: Number(row.overall_performance ?? row.performance ?? 0) || 0,
+            satisfaction: Number(row.overall_performance ?? row.csat_score ?? row.satisfaction ?? 0) || 0,
+            summary: String(row.summary ?? ''),
+            tags: tagsArr,
+          };
+          });
         setCallLogs(mapped);
       } catch (err) {
         console.error('Failed to fetch archives', err);
@@ -176,7 +202,7 @@ const VoiceArchive: React.FC = () => {
                               <Typography variant="caption" fontWeight={700} color="var(--accent-hex)" sx={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>Problem Summary</Typography>
                             </Box>
                             <Typography variant="body2" color="var(--text-main)" sx={{ mb: 2, lineHeight: 1.7, fontWeight: 400 }}>
-                              {log.summary}
+                              {log.summary.trim() ? log.summary : '—'}
                             </Typography>
 
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>

@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     # AI Services
     gemini_api_key: str = ""
     groq_api_key: str = ""
+    # Groq: Llama 3.1 8B Instant (128k) for supervisor live monitoring
+    groq_monitoring_model: str = "llama-3.1-8b-instant"
 
     # ElevenLabs TTS
     elevenlabs_api_key: str = ""

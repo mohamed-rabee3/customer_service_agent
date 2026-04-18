@@ -17,10 +17,20 @@ import os
 from dotenv import load_dotenv
 from livekit import agents, rtc
 from livekit.agents import AgentServer, AgentSession, room_io
+from livekit.agents.llm import ChatMessage
+from livekit.agents.voice.events import ConversationItemAddedEvent
 from livekit.plugins import elevenlabs, groq, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-from app.agents.base_agent import update_agent_status, save_interaction_summary
+from app.agents.base_agent import (
+    _get_client,
+    analyze_live_metrics_groq,
+    save_interaction_summary,
+    save_realtime_metrics,
+    summarize_voice_call_groq,
+    upsert_interaction_archive_record,
+    update_agent_status,
+)
 from app.agents.voice_agent import CustomerServiceAgent
 from app.core.constants import AgentStatus
 
@@ -79,14 +89,15 @@ async def entrypoint(ctx: agents.JobContext):
         "You are a helpful customer service agent. Be polite, concise, and helpful.",
     )
 
-    # Find the interaction_id from the room name or metadata
-    interaction_id = room_metadata.get("interaction_id", "")
-    if not interaction_id:
-        # Try to find from DB based on call_source_id (room name)
-        try:
-            from app.agents.base_agent import _get_client
+    # interaction_id: DB row for this room is authoritative (call_source_id == room).
+    # Dispatch metadata can disagree with DB on some LiveKit paths; using metadata alone
+    # wrote realtime_metrics to the wrong interaction_id (dashboard showed no metrics).
+    meta_interaction_id = (room_metadata.get("interaction_id") or "").strip()
+    interaction_id = ""
 
-            client = _get_client()
+    client = _get_client()
+    for attempt in range(40):
+        try:
             result = (
                 client.table("interactions")
                 .select("id")
@@ -95,15 +106,50 @@ async def entrypoint(ctx: agents.JobContext):
                 .execute()
             )
             if result.data:
-                interaction_id = result.data[0]["id"]
+                interaction_id = str(result.data[0]["id"]).strip()
+                logger.info(
+                    "Resolved interaction_id=%s for room %s (attempt %s)",
+                    interaction_id,
+                    ctx.room.name,
+                    attempt,
+                )
+                break
         except Exception as e:
-            logger.warning(f"Could not find interaction for room {ctx.room.name}: {e}")
+            logger.warning(
+                "Interaction lookup for room %s: %s", ctx.room.name, e
+            )
+        await asyncio.sleep(0.25)
+
+    if not interaction_id and meta_interaction_id:
+        interaction_id = meta_interaction_id
+        logger.info(
+            "Using interaction_id from dispatch metadata for room %s (no DB row yet)",
+            ctx.room.name,
+        )
+
+    if (
+        interaction_id
+        and meta_interaction_id
+        and interaction_id != meta_interaction_id
+    ):
+        logger.warning(
+            "interaction_id metadata (%s…) != DB (%s…) for room %s — using DB id",
+            meta_interaction_id[:8],
+            interaction_id[:8],
+            ctx.room.name,
+        )
+
+    if not interaction_id:
+        logger.error(
+            "No interaction_id for room %s — supervisor live metrics will not be saved",
+            ctx.room.name,
+        )
 
     # Create the agent with system prompt and identifiers
     agent = CustomerServiceAgent(
         system_prompt=system_prompt,
         agent_db_id=agent_db_id,
-        interaction_id=interaction_id,
+        interaction_id=str(interaction_id) if interaction_id else "",
     )
 
     # Configure the AgentSession with STT/LLM/TTS pipeline
@@ -129,6 +175,62 @@ async def entrypoint(ctx: agents.JobContext):
         turn_detection=MultilingualModel(),
     )
 
+    # Serialize whisper handling so overlapping say()/generate_reply() cannot interleave.
+    whisper_lock = asyncio.Lock()
+
+    # ── Live supervisor metrics (transcript line + Groq analysis) ─────
+    transcript_lines: list[str] = []
+    monitor_state: dict[str, asyncio.Task | None] = {"task": None}
+
+    def schedule_metrics_flush(latest_feed_line: str) -> None:
+        if not interaction_id:
+            return
+        prev = monitor_state.get("task")
+        if prev is not None and not prev.done():
+            prev.cancel()
+        lines_snapshot = list(transcript_lines)
+
+        async def _flush() -> None:
+            try:
+                await asyncio.sleep(1.4)
+            except asyncio.CancelledError:
+                return
+            if not interaction_id:
+                return
+            window = "\n".join(lines_snapshot[-60:])
+            line = latest_feed_line.strip()
+            if not line:
+                return
+            try:
+                perf, sent = await asyncio.to_thread(analyze_live_metrics_groq, window)
+                save_realtime_metrics(
+                    interaction_id=str(interaction_id),
+                    sentiment=sent,
+                    satisfaction_score=perf,
+                    feed_text=line[:8000],
+                )
+            except Exception as e:
+                logger.warning("Live metrics flush failed: %s", e)
+
+        monitor_state["task"] = asyncio.create_task(_flush())
+
+    @session.on("conversation_item_added")
+    def on_conversation_item(ev: ConversationItemAddedEvent) -> None:
+        item = ev.item
+        if not isinstance(item, ChatMessage):
+            return
+        if item.role not in ("user", "assistant"):
+            return
+        text = (item.text_content or "").strip()
+        if not text:
+            return
+        label = "Customer" if item.role == "user" else "Agent"
+        feed_line = f"{label}: {text}"
+        transcript_lines.append(feed_line)
+        if len(transcript_lines) > 100:
+            transcript_lines[:] = transcript_lines[-80:]
+        schedule_metrics_flush(feed_line)
+
     # ── Register whisper data message handler ──────────────────────────
     @ctx.room.on("data_received")
     def on_data_received(data_packet: rtc.DataPacket):
@@ -144,7 +246,15 @@ async def entrypoint(ctx: agents.JobContext):
                 )
 
                 # Put the customer on hold and process instructions
-                asyncio.create_task(_handle_whisper(session, instructions, agent_db_id))
+                asyncio.create_task(
+                    _handle_whisper(
+                        session,
+                        agent,
+                        instructions,
+                        agent_db_id,
+                        whisper_lock,
+                    )
+                )
 
             except Exception as e:
                 logger.error(f"Failed to process whisper: {e}")
@@ -157,7 +267,8 @@ async def entrypoint(ctx: agents.JobContext):
         if post_call_done:
             return
         post_call_done = True
-        await _handle_post_call(session, agent_db_id, interaction_id)
+        snap = list(transcript_lines)
+        await _handle_post_call(session, agent_db_id, interaction_id, snap)
 
     @ctx.room.on("participant_disconnected")
     def on_participant_disconnected(participant: rtc.RemoteParticipant):
@@ -195,43 +306,62 @@ async def entrypoint(ctx: agents.JobContext):
 
 async def _handle_whisper(
     session: AgentSession,
+    agent: CustomerServiceAgent,
     instructions: str,
     agent_db_id: str,
+    lock: asyncio.Lock,
 ) -> None:
     """
     Handle whisper instructions from supervisor.
 
-    1. Say "Please hold" to customer
-    2. Inject instructions into the agent's context
-    3. Resume conversation
+    1. Say a brief apology / hold line to the customer
+    2. Merge supervisor text into the agent instructions (persistent behavior)
+    3. Continue the conversation from where it left off
     """
-    try:
-        # Politely put the customer on hold
-        await session.say(
-            "Please hold one moment while I check something for you.",
-            allow_interruptions=False,
-        )
-
-        # Process the whisper instructions — generate a new response
-        # based on the supervisor's guidance
-        await session.generate_reply(
-            instructions=f"[SUPERVISOR INSTRUCTION]: {instructions}. "
-            "Take this into account for your next response. "
-            "Do not mention the supervisor or that you received instructions."
-        )
-
-        # Resume agent status
+    text = (instructions or "").strip()
+    if not text:
+        logger.warning("Whisper ignored — empty instructions")
         update_agent_status(agent_db_id, AgentStatus.IN_CALL)
+        return
 
-        logger.info(f"Whisper processed for agent {agent_db_id}")
-    except Exception as e:
-        logger.error(f"Failed to handle whisper for agent {agent_db_id}: {e}")
+    async with lock:
+        try:
+            await session.say(
+                "I'm sorry — can you be with me for a second?",
+                allow_interruptions=False,
+            )
+
+            current = agent.instructions or ""
+            merged = (
+                current.rstrip()
+                + "\n\n[Supervisor coaching for the rest of this call — "
+                "never mention coaching or supervisors to the customer]: "
+                + text
+            )
+            await agent.update_instructions(merged)
+
+            await session.generate_reply(
+                instructions=(
+                    "Continue naturally from exactly where the conversation paused. "
+                    "Pick up the customer's last topic or question. "
+                    "Apply the new supervisor coaching silently. "
+                    "Do not apologize again or mention waiting, supervisors, or instructions."
+                )
+            )
+
+            update_agent_status(agent_db_id, AgentStatus.IN_CALL)
+
+            logger.info(f"Whisper processed for agent {agent_db_id}")
+        except Exception as e:
+            logger.error(f"Failed to handle whisper for agent {agent_db_id}: {e}")
+            update_agent_status(agent_db_id, AgentStatus.IN_CALL)
 
 
 async def _handle_post_call(
     session: AgentSession,
     agent_db_id: str,
     interaction_id: str,
+    transcript_lines_snapshot: list[str] | None = None,
 ) -> None:
     """
     Handle post-call processing after customer disconnects.
@@ -277,12 +407,27 @@ async def _handle_post_call(
                 "end_at": datetime.now(timezone.utc).isoformat(),
             }).eq("id", interaction_id).execute()
 
-            # Generate summary (simplified — in production, use the chat context)
+            joined = "\n".join(transcript_lines_snapshot or [])
+            (
+                summary_text,
+                issues_list,
+                topic_tags,
+                overall_perf,
+                sentiment_groq,
+            ) = await asyncio.to_thread(summarize_voice_call_groq, joined)
             save_interaction_summary(
                 interaction_id=interaction_id,
-                summary="Call completed. Summary to be generated.",
-                issues={"items": []},
-                tags={"categories": []},
+                summary=summary_text,
+                issues=issues_list,
+                tags=topic_tags,
+            )
+            upsert_interaction_archive_record(
+                interaction_id=interaction_id,
+                summary=summary_text,
+                overall_performance=overall_perf,
+                sentiment=sentiment_groq,
+                issues=issues_list,
+                tags=topic_tags,
             )
 
         logger.info(

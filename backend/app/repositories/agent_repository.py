@@ -56,14 +56,20 @@ class AgentRepository(BaseRepository[Agent]):
         except Exception as e:
             raise Exception(f"Failed to fetch agent {agent_id}: {e}") from e
 
-    def find_idle_agent(self, agent_type: AgentType) -> Agent | None:
-        """Find first idle agent of a given type for interaction routing."""
+    def find_idle_agent_for_supervisors(
+        self, agent_type: AgentType, supervisor_ids: list[UUID]
+    ) -> Agent | None:
+        """Find an idle agent of the given type owned by one of the supervisors."""
+        if not supervisor_ids:
+            return None
         try:
+            id_strings = [str(sid) for sid in supervisor_ids]
             response = (
                 self.client.table(self.table_name)
                 .select("*")
                 .eq("agent_type", agent_type.value)
                 .eq("status", AgentStatus.IDLE.value)
+                .in_("supervisor_id", id_strings)
                 .limit(1)
                 .execute()
             )

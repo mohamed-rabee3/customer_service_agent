@@ -21,4 +21,7 @@ export const agentsAPI = {
 
   delete: (id: string) =>
     api.delete(`/agents/${id}`),
+
+  whisper: (id: string, instructions: string) =>
+    api.post(`/agents/${id}/whisper`, { instructions }),
 };

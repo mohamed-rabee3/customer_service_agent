@@ -20,8 +20,8 @@ class CreateAgentRequest(BaseModel):
         examples=["You are a helpful customer service agent..."],
     )
     mcp_tools: dict[str, Any] = Field(
-        ...,
-        description="MCP tools JSON configuration",
+        default_factory=dict,
+        description="MCP tools JSON configuration (omit for none)",
         examples=[{
             "tools": [
                 {

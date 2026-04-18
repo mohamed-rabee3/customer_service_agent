@@ -18,7 +18,10 @@ class ArchiveCard(BaseModel):
     summary: Optional[str] = None
     tags: List[str] = []
     csat_score: Optional[float] = None
-    
+    # From public.archive (Groq Llama 3.1 8B Instant post-call row), when present
+    overall_performance: Optional[float] = None
+    sentiment: Optional[str] = None  # good | neutral | critical (DB enum)
+
     model_config = ConfigDict(from_attributes=True)
 
 class ArchiveDetail(ArchiveCard):

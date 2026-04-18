@@ -3,9 +3,10 @@ import { createPortal } from 'react-dom';
 import { Send, ChevronDown, Check } from 'lucide-react';
 import { toast } from 'react-toastify';
 import AgentAvatar from './AgentAvatar';
+import { agentsAPI } from '@/services/agentsService';
 
 interface Agent {
-  id: number;
+  id: string | number;
   name: string;
   status: string;
 }
@@ -65,17 +66,47 @@ const InjectBox: React.FC<InjectBoxProps> = ({ agents, label = 'inject' }) => {
     return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
   }, [menuOpen]);
 
-  const handleInject = () => {
-    if (!text.trim()) { toast.warn('Please enter a message first'); return; }
+  const handleInject = async () => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      toast.warn('Please enter a message first');
+      return;
+    }
+
+    const target = agents.find((a) => a.name === selectedAgentName);
+    if (!target) {
+      toast.warn('Select a valid agent');
+      return;
+    }
+
+    const canInject =
+      target.status === 'in_call' ||
+      target.status === 'in_chat';
+    if (!canInject) {
+      toast.warn(
+        'Agent must be on an active call or chat to inject instructions',
+      );
+      return;
+    }
+
     setIsSending(true);
-    setTimeout(() => {
-      setIsSending(false);
+    try {
+      await agentsAPI.whisper(String(target.id), trimmed);
       setIsSuccess(true);
       setIsVaporizing(true);
-      toast.success(`Sent to ${selectedAgentName}: "${text.trim()}"`);
-      setTimeout(() => { setText(''); setIsVaporizing(false); }, 500);
+      toast.success(`Instructions sent to ${selectedAgentName}`);
+      setTimeout(() => {
+        setText('');
+        setIsVaporizing(false);
+      }, 500);
       setTimeout(() => setIsSuccess(false), 1200);
-    }, 900);
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response
+        ?.data?.detail;
+      toast.error(detail ?? 'Failed to send instructions');
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const dropdownMenu = menuOpen ? createPortal(
@@ -124,7 +155,7 @@ const InjectBox: React.FC<InjectBoxProps> = ({ agents, label = 'inject' }) => {
                 position: 'relative',
               }}
             >
-              <AgentAvatar name={agent.name} status={agent.status as 'active' | 'idle'} size="sm" showStatus={false} />
+              <AgentAvatar name={agent.name} status={agent.status === 'idle' ? 'idle' : 'active'} size="sm" showStatus={false} />
               <span style={{ flex: 1, textAlign: 'left' }}>{agent.name}</span>
               {isSelected && (
                 <span style={{

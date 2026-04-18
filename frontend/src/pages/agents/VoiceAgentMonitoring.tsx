@@ -1,32 +1,27 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Box, Typography, Card, Avatar } from '@mui/material';
+import React, { useState, useEffect, useRef } from 'react';
+import { Box, Typography, Card } from '@mui/material';
+import { toast } from 'react-toastify';
 import VoiceAgentCard from '@/components/agents/VoiceAgentCard';
 import AgentDetailModal from '@/components/agents/AgentDetailModal';
 import InjectBox from '@/components/agents/InjectBox';
+import { supervisorsAPI } from '@/services/supervisorsService';
 import '@/components/agents/VoiceAgentSelector.css';
 
-interface VoiceAgent {
-  id: number;
+export type AgentBackendStatus = 'idle' | 'in_call' | 'in_chat' | 'paused';
+
+export interface VoiceAgent {
+  id: string;
   name: string;
-  status: 'active' | 'idle';
+  status: AgentBackendStatus;
   sentiment: string;
   performance: string;
   feed: string;
+  current_interaction?: Record<string, unknown> | null;
 }
 
-const SENTIMENTS = ['good', 'neutral', 'bad'] as const;
-const FEEDS = [
-  'Handling customer complaint regarding billing.',
-  'Discussing refund options with caller.',
-  'Verifying account details for security.',
-  'Explaining new pricing plan to customer.',
-  'Escalating issue to senior support.',
-  'Wrapping up call, summarizing resolution.',
-  'Customer expressing frustration about wait time.',
-  'Offering loyalty discount to retain customer.',
-];
+const DEFAULT_FEED_IDLE = 'Waiting for call.';
+const DEFAULT_FEED_ACTIVE = 'Live interaction in progress.';
 
-/* Glassmorphism card — same DNA as AdminDashboard */
 const glassCardSx = {
   textAlign: 'center' as const,
   p: 3,
@@ -44,52 +39,94 @@ const glassCardSx = {
   },
 };
 
+const mapDashboardAgent = (raw: Record<string, any>): VoiceAgent => {
+  const status = (raw.status as AgentBackendStatus) ?? 'idle';
+  const metrics = raw.latest_metrics as Record<string, any> | null | undefined;
+  const rawSent = (metrics?.sentiment as string | undefined) ?? 'neutral';
+  const sentiment = rawSent === 'critical' ? 'bad' : rawSent;
+  const rawScore = metrics?.satisfaction_score;
+  const score =
+    typeof rawScore === 'number'
+      ? rawScore
+      : typeof rawScore === 'string'
+        ? Number.parseFloat(rawScore)
+        : NaN;
+  const performance =
+    Number.isFinite(score)
+      ? `${Math.round(score)}%`
+      : typeof raw.performance_score === 'number'
+        ? `${Math.round(raw.performance_score)}%`
+        : '—';
+  const feed =
+    metrics?.feed_text ??
+    (status === 'idle' ? DEFAULT_FEED_IDLE : DEFAULT_FEED_ACTIVE);
+
+  return {
+    id: String(raw.id),
+    name: raw.name ?? 'Agent',
+    status,
+    sentiment,
+    performance,
+    feed,
+    current_interaction: raw.current_interaction ?? null,
+  };
+};
+
 const VoiceAgentMonitoring: React.FC = () => {
+  const [agents, setAgents] = useState<VoiceAgent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<VoiceAgent | null>(null);
+  const [loading, setLoading] = useState(true);
+  const erroredRef = useRef(false);
 
-  const [agents, setAgents] = useState<VoiceAgent[]>([
-    { id: 1, name: 'Agent 1', status: 'active', sentiment: 'good', performance: '82%', feed: 'Handling customer complaint regarding billing.' },
-    { id: 2, name: 'Agent 2', status: 'idle', sentiment: 'neutral', performance: '88%', feed: 'Waiting for call.' },
-    { id: 3, name: 'Agent 3', status: 'active', sentiment: 'bad', performance: '75%', feed: 'Escalating issue to manager.' },
-  ]);
+  const fetchAgents = async () => {
+    try {
+      const res = await supervisorsAPI.getMyDashboard();
+      const list = Array.isArray(res.data?.agents) ? res.data.agents : [];
+      const voiceAgents: VoiceAgent[] = list
+        .filter((a: Record<string, any>) => (a.agent_type ?? 'voice') === 'voice')
+        .map(mapDashboardAgent);
+      setAgents(voiceAgents);
+      erroredRef.current = false;
+    } catch (err) {
+      if (!erroredRef.current) {
+        erroredRef.current = true;
+        console.error('Failed to load voice agents', err);
+        toast.error('Failed to load voice agents');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  // Simulate live performance & mood changes for Agent 1
   useEffect(() => {
-    const interval = setInterval(() => {
-      setAgents(prev => prev.map(agent => {
-        if (agent.id !== 1) return agent;
-        const currentPerf = parseInt(agent.performance);
-        const delta = Math.floor(Math.random() * 7) - 3;
-        const newPerf = Math.min(99, Math.max(60, currentPerf + delta));
-        const sentimentRoll = Math.random();
-        let newSentiment = agent.sentiment;
-        if (sentimentRoll < 0.15) {
-          newSentiment = SENTIMENTS[Math.floor(Math.random() * SENTIMENTS.length)];
-        }
-        const feedRoll = Math.random();
-        let newFeed = agent.feed;
-        if (feedRoll < 0.2) {
-          newFeed = FEEDS[Math.floor(Math.random() * FEEDS.length)];
-        }
-        return { ...agent, performance: `${newPerf}%`, sentiment: newSentiment, feed: newFeed };
-      }));
-    }, 2500);
+    fetchAgents();
+    const interval = setInterval(fetchAgents, 2000);
     return () => clearInterval(interval);
   }, []);
 
-  // Keep selected agent in sync with live data
+  // Keep the selected agent in sync with live data (avoid JSON.stringify — key order breaks updates)
   useEffect(() => {
-    if (selectedAgent) {
-      const updated = agents.find(a => a.id === selectedAgent.id);
-      if (updated && (updated.performance !== selectedAgent.performance || updated.sentiment !== selectedAgent.sentiment || updated.feed !== selectedAgent.feed)) {
-        setSelectedAgent(updated);
-      }
+    if (!selectedAgent) return;
+    const updated = agents.find(a => a.id === selectedAgent.id);
+    if (!updated) return;
+    if (
+      updated.feed !== selectedAgent.feed ||
+      updated.performance !== selectedAgent.performance ||
+      updated.sentiment !== selectedAgent.sentiment ||
+      updated.status !== selectedAgent.status ||
+      updated.name !== selectedAgent.name
+    ) {
+      setSelectedAgent(updated);
     }
   }, [agents, selectedAgent]);
 
-  // Stats cards — unified with admin dashboard glassmorphism
-  const totalActive = agents.filter(a => a.status === 'active').length;
-  const avgPerf = Math.round(agents.reduce((acc, a) => acc + parseInt(a.performance), 0) / agents.length);
+  const totalActive = agents.filter(a => a.status !== 'idle').length;
+  const perfValues = agents
+    .map(a => parseInt(a.performance, 10))
+    .filter(n => !Number.isNaN(n));
+  const avgPerf = perfValues.length
+    ? Math.round(perfValues.reduce((acc, n) => acc + n, 0) / perfValues.length)
+    : 0;
 
   return (
     <div style={{ padding: 32, backgroundColor: 'var(--bg)', minHeight: '100vh' }}>
@@ -100,12 +137,11 @@ const VoiceAgentMonitoring: React.FC = () => {
         Select an agent to view details and monitor live activity
       </p>
 
-      {/* Glassmorphism stat cards — same DNA as admin */}
       <Box sx={{ display: 'flex', gap: 3, justifyContent: 'center', mb: 5, flexWrap: 'wrap' }}>
         {[
           { label: 'Total Agents', value: agents.length, color: 'var(--text-main)' },
-          { label: 'Active Now', value: totalActive, color: 'var(--success)' },
-          { label: 'Avg Performance', value: `${avgPerf}%`, color: 'var(--accent-hex)' },
+          { label: 'In Call Now', value: totalActive, color: 'var(--success)' },
+          { label: 'Avg Performance', value: avgPerf ? `${avgPerf}%` : '—', color: 'var(--accent-hex)' },
         ].map((stat, idx) => (
           <Box
             key={stat.label}
@@ -129,15 +165,25 @@ const VoiceAgentMonitoring: React.FC = () => {
 
       <div className="voice-agents-container">
         <div className="voice-agents-grid">
-          {agents.map((agent, index) => (
-            <VoiceAgentCard
-              key={agent.id}
-              agent={agent}
-              index={index}
-              isSelected={selectedAgent?.id === agent.id}
-              onClick={(a) => setSelectedAgent(a)}
-            />
-          ))}
+          {loading && agents.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)', textAlign: 'center', width: '100%' }}>
+              Loading agents…
+            </p>
+          ) : agents.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)', textAlign: 'center', width: '100%' }}>
+              No voice agents configured yet.
+            </p>
+          ) : (
+            agents.map((agent, index) => (
+              <VoiceAgentCard
+                key={agent.id}
+                agent={agent}
+                index={index}
+                isSelected={selectedAgent?.id === agent.id}
+                onClick={(a) => setSelectedAgent(a)}
+              />
+            ))
+          )}
         </div>
       </div>
 

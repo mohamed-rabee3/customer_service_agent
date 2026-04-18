@@ -81,7 +81,7 @@ function AppRoutes() {
         {/* Admin Only Routes */}
         <Route path="/issues" element={<AdminRoute><ArchiveIssues /></AdminRoute>} />
         <Route path="/settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
-        <Route path="/agent-config" element={<AdminRoute><AgentConfiguration /></AdminRoute>} />
+        <Route path="/agent-config" element={<SupervisorRoute><AgentConfiguration /></SupervisorRoute>} />
 
         {/* Supervisor (+ Admin fallback) Routes */}
         <Route path="/voice-agent" element={<SupervisorRoute type="voice"><VoiceAgentMonitoring /></SupervisorRoute>} />

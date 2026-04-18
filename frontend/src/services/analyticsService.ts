@@ -2,9 +2,13 @@
 import api from './api';
 
 export const analyticsAPI = {
-  getByAgent: (agentId: string) =>
-    api.get(`/analytics/agent/${agentId}`),
+  getByAgent: (agentId: string, timePeriod = 'all_time') =>
+    api.get(`/analytics/agent/${agentId}`, {
+      params: { time_period: timePeriod },
+    }),
 
-  getBySupervisor: (supervisorId: string) =>
-    api.get(`/analytics/supervisor/${supervisorId}`),
+  getBySupervisor: (supervisorId: string, timePeriod = 'all_time') =>
+    api.get(`/analytics/supervisor/${supervisorId}`, {
+      params: { time_period: timePeriod },
+    }),
 };

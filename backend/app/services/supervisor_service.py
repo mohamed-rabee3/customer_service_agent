@@ -21,6 +21,10 @@ def get_supervisor_dashboard(supervisor_id: UUID) -> dict:
     if supervisor is None:
         raise NotFoundException("Supervisor not found")
 
+    # So mock-phone / POST interactions only route to this supervisor's idle agents
+    # while they have the app open (dashboard polling).
+    supervisor_repository.touch_monitoring_presence(supervisor_id)
+
     # Get aggregated dashboard data efficiently
     enriched_agents = supervisor_repository.get_dashboard_data(supervisor_id)
 

@@ -30,7 +30,8 @@ async def create_interaction(
     """
     Start a new interaction (customer-facing, no auth).
 
-    Creates a LiveKit room, assigns an idle agent, and returns
+    Creates a LiveKit room, assigns an idle agent whose supervisor is
+    actively monitoring (recent GET /supervisors/me/dashboard), and returns
     a token for the customer to join the room.
     """
     service = InteractionService()

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.constants import AgentStatus, AgentType, MAX_AGENTS_PER_SUPERVISOR
 from app.core.exceptions import (
@@ -25,7 +25,7 @@ class CreateAgentData(BaseModel):
 
     name: str
     system_prompt: str
-    mcp_tools: dict[str, Any]
+    mcp_tools: dict[str, Any] = Field(default_factory=dict)
 
 
 class UpdateAgentData(BaseModel):

@@ -2,45 +2,83 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { PhoneForwarded, Mic, X, Circle, TrendingUp, Smile, Info, CheckCircle, ShieldCheck, Send } from 'lucide-react';
 import { toast } from 'react-toastify';
 import AgentAvatar from './AgentAvatar';
+import { agentsAPI } from '@/services/agentsService';
+
+const DEFAULT_FEED_IDLE = 'Waiting for call.';
+const DEFAULT_FEED_ACTIVE = 'Live interaction in progress.';
+
+type AgentBackendStatus = 'idle' | 'in_call' | 'in_chat' | 'paused';
 
 interface VoiceAgent {
-  id: number;
+  id: string;
   name: string;
-  status: 'active' | 'idle';
+  status: AgentBackendStatus;
   sentiment: string;
   performance: string;
   feed: string;
+  current_interaction?: Record<string, unknown> | null;
 }
+
+const STATUS_LABEL: Record<AgentBackendStatus, string> = {
+  idle: 'IDLE',
+  in_call: 'IN CALL',
+  in_chat: 'IN CHAT',
+  paused: 'PAUSED',
+};
 
 interface AgentDetailModalProps {
   agent: VoiceAgent | null;
   onClose: () => void;
 }
 
-const mockTranscriptLines: { speaker: string, text: string }[] = [];
+type FeedLine = { speaker: string; text: string };
+
+function parseFeedLine(feed: string): FeedLine | null {
+  const t = feed.trim();
+  if (!t) return null;
+  const cm = /^Customer:\s*(.+)$/is.exec(t);
+  if (cm) return { speaker: 'Customer', text: cm[1].trim() };
+  const ag = /^Agent:\s*(.+)$/is.exec(t);
+  if (ag) return { speaker: 'Agent', text: ag[1].trim() };
+  return { speaker: 'Live', text: t };
+}
 
 const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClose }) => {
   const [isExiting, setIsExiting] = useState(false);
   const [isTakingOver, setIsTakingOver] = useState(false);
   const [takenOver, setTakenOver] = useState(false);
-  const [feedLines, setFeedLines] = useState<typeof mockTranscriptLines>([]);
+  const [feedLines, setFeedLines] = useState<FeedLine[]>([]);
   const [whisperOpen, setWhisperOpen] = useState(false);
   const [whisperText, setWhisperText] = useState('');
   const [isSendingWhisper, setIsSendingWhisper] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
   const whisperInputRef = useRef<HTMLInputElement>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (agent) { setTakenOver(false); setIsTakingOver(false); setFeedLines([]); setWhisperText(''); setWhisperOpen(false); }
+    if (agent) {
+      setTakenOver(false);
+      setIsTakingOver(false);
+      setFeedLines([]);
+      setWhisperText('');
+      setWhisperOpen(false);
+    }
   }, [agent?.id]);
 
   useEffect(() => {
-    if (!agent) return;
-    setFeedLines([]);
-    // Setup LiveKit connection here when ready
-    // For now, it remains empty as "Waiting for live stream..."
-  }, [agent?.id]);
+    if (!agent || agent.status === 'idle') {
+      if (agent?.status === 'idle') setFeedLines([]);
+      return;
+    }
+    const { feed } = agent;
+    if (!feed || feed === DEFAULT_FEED_IDLE || feed === DEFAULT_FEED_ACTIVE) return;
+    const parsed = parseFeedLine(feed);
+    if (!parsed) return;
+    setFeedLines(prev => {
+      const last = prev[prev.length - 1];
+      if (last && last.speaker === parsed.speaker && last.text === parsed.text) return prev;
+      return [...prev, parsed].slice(-80);
+    });
+  }, [agent?.id, agent?.status, agent?.feed]);
 
   useEffect(() => {
     if (feedRef.current) feedRef.current.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' });
@@ -63,10 +101,25 @@ const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClose }) =
     setTimeout(() => { setIsTakingOver(false); setTakenOver(true); toast.success(`You are now controlling the call with ${agent?.name}'s customer.`); }, 1500);
   };
 
-  const handleWhisperSend = () => {
-    if (!whisperText.trim()) { toast.warn('Please enter a whisper message'); return; }
+  const handleWhisperSend = async () => {
+    const text = whisperText.trim();
+    if (!text) { toast.warn('Please enter a whisper message'); return; }
+    if (!agent) return;
+    if (agent.status === 'idle') {
+      toast.warn('Agent is idle — nothing to whisper to');
+      return;
+    }
     setIsSendingWhisper(true);
-    setTimeout(() => { toast.success(`Whisper sent to ${agent?.name}: "${whisperText.trim()}"`); setWhisperText(''); setIsSendingWhisper(false); }, 600);
+    try {
+      await agentsAPI.whisper(agent.id, text);
+      toast.success(`Whisper sent to ${agent.name}`);
+      setWhisperText('');
+    } catch (err: any) {
+      console.error('Whisper failed', err);
+      toast.error(err?.response?.data?.detail ?? 'Failed to send whisper');
+    } finally {
+      setIsSendingWhisper(false);
+    }
   };
 
   if (!agent) return null;
@@ -78,12 +131,12 @@ const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClose }) =
 
         {/* Avatar */}
         <div className="flex flex-col items-center mb-6 modal-stagger-1">
-          <div className="mb-4"><AgentAvatar name={agent.name} status={agent.status} size="lg" /></div>
+          <div className="mb-4"><AgentAvatar name={agent.name} status={agent.status === 'idle' ? 'idle' : 'active'} size="lg" /></div>
           <h2 className="text-2xl font-bold" style={{ color: 'var(--text-main)' }}>{agent.name}</h2>
           <div className="flex items-center gap-2 mt-2">
-            <Circle size={8} fill={takenOver ? 'var(--accent)' : agent.status === 'active' ? 'var(--success)' : 'var(--text-muted)'} stroke="none" />
-            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: takenOver ? 'var(--accent)' : agent.status === 'active' ? 'var(--success)' : 'var(--text-muted)' }}>
-              {takenOver ? 'Supervisor Live' : agent.status}
+            <Circle size={8} fill={takenOver ? 'var(--accent)' : agent.status !== 'idle' ? 'var(--success)' : 'var(--text-muted)'} stroke="none" />
+            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: takenOver ? 'var(--accent)' : agent.status !== 'idle' ? 'var(--success)' : 'var(--text-muted)' }}>
+              {takenOver ? 'Supervisor Live' : (STATUS_LABEL[agent.status] ?? agent.status)}
             </span>
           </div>
         </div>
@@ -110,11 +163,13 @@ const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClose }) =
           <div ref={feedRef} className="live-feed-container" style={{ backgroundColor: 'var(--bg-dark)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '14px 16px', maxHeight: 200, overflowY: 'auto', scrollBehavior: 'smooth' }}>
             {feedLines.length === 0 ? (
                <div className="text-center py-4" style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.85rem' }}>
-                 Waiting for LiveKit stream connection...
+                 {agent.status === 'idle'
+                   ? 'No active call — live transcript appears when this agent is on a call.'
+                   : 'Waiting for speech… transcript lines appear as the customer and agent speak.'}
                </div>
             ) : feedLines.map((line, i) => (
               <div key={i} className="live-feed-line" style={{ animation: 'feedLineIn 0.4s ease-out forwards', opacity: 0, marginBottom: i < feedLines.length - 1 ? 10 : 0 }}>
-                <span className="text-xs font-bold" style={{ color: line.speaker === 'Agent' ? 'var(--primary)' : 'var(--accent)', marginRight: 8 }}>{line.speaker}:</span>
+                <span className="text-xs font-bold" style={{ color: line.speaker === 'Agent' ? 'var(--primary)' : line.speaker === 'Customer' ? 'var(--accent)' : 'var(--text-muted)', marginRight: 8 }}>{line.speaker}:</span>
                 <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{line.text}</span>
               </div>
             ))}

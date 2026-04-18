@@ -139,13 +139,13 @@ class CustomerServiceAgent(Agent):
         customer sentiment.
 
         Args:
-            sentiment: Current sentiment - must be 'good', 'neutral', or 'critical'
+            sentiment: 'good', 'neutral', 'bad' (or legacy 'critical'), or 'critical'
             satisfaction_score: Satisfaction score from 0 to 100
             summary: Brief one-sentence summary of the current conversation state
         """
         # Validate inputs
-        if sentiment not in ("good", "neutral", "critical"):
-            return "Invalid sentiment value. Use 'good', 'neutral', or 'critical'."
+        if sentiment not in ("good", "neutral", "critical", "bad"):
+            return "Invalid sentiment value. Use 'good', 'neutral', or 'bad'."
         if not (0 <= satisfaction_score <= 100):
             return "Satisfaction score must be between 0 and 100."
 
