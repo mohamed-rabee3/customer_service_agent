@@ -21,19 +21,17 @@ logger = logging.getLogger(__name__)
 def validate_telegram_token(token: str | None) -> bool:
     """
     Validate Telegram bot token format.
-    
-    Token format: 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
     """
     if not token:
-        return True  # Optional field
+        return True
     
     token = token.strip()
-    if not token:
-        return True  # Empty is OK
+    if not token or token == "{}":
+        return True
     
-    # Basic format check: must contain colon and be reasonable length
-    if ':' not in token or len(token) < 20:
-        logger.warning(f"Invalid telegram token format: {token[:10]}...")
+    # Very basic check: just ensure a colon exists. Let Telegram API handle the rest.
+    if ':' not in token:
+        logger.warning(f"Invalid telegram token format (no colon found): {token[:10]}...")
         return False
     
     return True
@@ -86,20 +84,30 @@ def create_agent(
     try:
         # Prepare webhook_configs
         webhook_configs = request.webhook_configs or {}
+
+        # Sync legacy telegram_bot_token from webhook_configs if missing
+        if not request.telegram_bot_token or request.telegram_bot_token == "{}":
+            tg_token = webhook_configs.get("telegram", {}).get("bot_token")
+            if tg_token and tg_token != "{}":
+                request.telegram_bot_token = tg_token
         
         # If using the legacy telegram_bot_token field, merge it into webhook_configs
-        if request.telegram_bot_token:
+        if request.telegram_bot_token and request.telegram_bot_token.strip() != "{}":
             if "telegram" not in webhook_configs:
                 webhook_configs["telegram"] = {}
             webhook_configs["telegram"]["bot_token"] = request.telegram_bot_token.strip()
             webhook_configs["telegram"]["enabled"] = True
+        elif "telegram" in webhook_configs:
+             # Ensure it's disabled if no valid token
+             if not webhook_configs["telegram"].get("bot_token") or webhook_configs["telegram"].get("bot_token") == "{}":
+                 webhook_configs["telegram"]["enabled"] = False
         
         created_agent = agent_repository.create_agent(
             supervisor_id=supervisor_id,
             name=request.name,
             system_prompt=request.system_prompt,
             mcp_tools=request.mcp_tools,
-            telegram_bot_token=request.telegram_bot_token.strip() if request.telegram_bot_token else None,
+            telegram_bot_token=request.telegram_bot_token.strip() if request.telegram_bot_token and request.telegram_bot_token != "{}" else "{}",
             webhook_configs=webhook_configs,
             agent_type=agent_type,
         )
@@ -202,29 +210,34 @@ def update_agent(
     webhook_configs = request.webhook_configs or agent.webhook_configs or {}
     tg_conf = webhook_configs.get("telegram", {})
     
-    if request.telegram_bot_token:
+    if request.telegram_bot_token and request.telegram_bot_token != "{}":
         # Sync from request to webhook_configs
         if "telegram" not in webhook_configs:
             webhook_configs["telegram"] = {}
         webhook_configs["telegram"]["bot_token"] = request.telegram_bot_token.strip()
         webhook_configs["telegram"]["enabled"] = True
-    elif tg_conf.get("bot_token"):
+    elif tg_conf.get("bot_token") and tg_conf.get("bot_token") != "{}":
         # Sync from webhook_configs to request
         request.telegram_bot_token = tg_conf.get("bot_token").strip()
+    else:
+        request.telegram_bot_token = "{}"
+        if "telegram" in webhook_configs:
+            webhook_configs["telegram"]["enabled"] = False
+            webhook_configs["telegram"]["bot_token"] = "{}"
         
     # Update the request to include the unified webhook_configs
     request.webhook_configs = webhook_configs
     
     # Log the update for debugging
-    if request.telegram_bot_token:
-        logger.info(f"✅ Preparing update for agent {agent_id} with Telegram token: {request.telegram_bot_token[:10]}...")
+    logger.info(f"🚀 Sending update to database for agent {agent_id}. Token starts with: {str(request.telegram_bot_token)[:10] if request.telegram_bot_token else 'None'}")
     
     try:
         updated_agent = agent_repository.update(agent_id, request)
     except Exception as e:
-         raise HTTPException(
+        logger.error(f"❌ Database error updating agent {agent_id}: {e}")
+        raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An internal database error occurred while updating the agent.",
+            detail=f"Internal database error: {str(e)}",
         )
 
     return updated_agent

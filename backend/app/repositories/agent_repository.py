@@ -22,7 +22,7 @@ class AgentModel(BaseModel):
     agent_type: AgentType
     system_prompt: str
     status: AgentStatus
-    telegram_bot_token: str | None = None
+    telegram_bot_token: str = "{}"
     webhook_configs: dict[str, Any] = {}
     mcp_tools: dict[str, Any]
     created_at: datetime
@@ -98,7 +98,7 @@ class AgentRepository(BaseRepository[AgentModel]):
             "agent_type": agent_type.value,
             "system_prompt": system_prompt,
             "status": AgentStatus.IDLE.value,
-            "telegram_bot_token": telegram_bot_token,
+            "telegram_bot_token": telegram_bot_token or "{}",
             "webhook_configs": webhook_configs,
             "mcp_tools": mcp_tools,
             "created_at": now,

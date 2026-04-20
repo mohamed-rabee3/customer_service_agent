@@ -115,6 +115,7 @@ async def telegram_webhook(
         db.table("interactions")
         .select("id")
         .eq("call_source_id", call_source_id)
+        .eq("agent_id", str(agent_id))
         .eq("status", InteractionStatus.ACTIVE.value)
         .limit(1)
         .execute()

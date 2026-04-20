@@ -98,7 +98,7 @@ for agent in res.data:
     configs = agent.get("webhook_configs") or {{}}
     tg_config = configs.get("telegram") or {{}}
     bot_token = tg_config.get("bot_token")
-    if tg_config.get("enabled") and bot_token:
+    if tg_config.get("enabled") and bot_token and bot_token != "{{}}":
         webhook_url = f"{{public_url}}/v1/telegram/{{agent['id']}}"
         print(f"Setting webhook for {{agent['id']}} to {{webhook_url}}")
         api_url = f"https://api.telegram.org/bot{{bot_token}}/setWebhook?url={{webhook_url}}"

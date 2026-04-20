@@ -50,6 +50,10 @@ class TelegramWebhookService:
             True if webhook was set successfully, False otherwise
         """
         try:
+            if not bot_token or bot_token == "{}":
+                logger.info(f"Skipping webhook setup for agent {agent_id}: No valid token provided")
+                return False
+                
             webhook_url = TelegramWebhookService.get_webhook_url(agent_id)
             
             if not webhook_url:
