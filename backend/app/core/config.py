@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # CORS Configuration
-    cors_origins: str = "http://localhost:5173,http://localhost:3000"
+    cors_origins: str = "*"
 
     # LiveKit Configuration
     livekit_url: str = ""
@@ -33,6 +33,21 @@ class Settings(BaseSettings):
     # AI Services
     gemini_api_key: str = ""
     groq_api_key: str = ""
+    # Groq: Llama 3.1 8B Instant (128k) for supervisor live monitoring
+    groq_monitoring_model: str = "llama-3.1-8b-instant"
+
+    # ElevenLabs TTS
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"  # Rachel — female
+    elevenlabs_model: str = "eleven_flash_v2_5"  # ~75ms latency, realtime
+
+    # OpenRouter Configuration (Chat Agent LLM)
+    openrouter_api_key: str = ""
+    openrouter_model: str = "meta-llama/llama-3.3-70b-instruct:free"
+
+    # Telegram Bot Configuration
+    telegram_bot_token: str = ""
+    webhook_domain: str = ""  # Domain for webhook callbacks (e.g., https://yourdomain.com)
 
     @property
     def cors_origins_list(self) -> list[str]:

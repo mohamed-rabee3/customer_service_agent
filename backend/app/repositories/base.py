@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from supabase import Client
 
 from app.core.exceptions import NotFoundException
-from app.db.supabase import get_supabase_client
+from app.db.supabase import get_supabase_service_client
 
 # Type variable for Pydantic models
 T = TypeVar("T", bound=BaseModel)
@@ -35,7 +35,7 @@ class BaseRepository(Generic[T]):
         """
         self.table_name = table_name
         self.model_class = model_class
-        self.client = client or get_supabase_client()
+        self.client = client or get_supabase_service_client()
 
     def get_all(self, skip: int = 0, limit: int = 100) -> list[T]:
         """

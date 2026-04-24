@@ -1,0 +1,8 @@
+feat: integrate voice and chat platforms
+
+Merges V3 chat and Voice branches into a unified integration_v1 base.
+- Integrated LiveKit/Groq/ElevenLabs voice agent with standard text/Telegram chat channels.
+- Refactored API routing and session managers to support both modes simultaneously.
+- Fixed `run_all.py` for full-stack orchestration.
+- Modernized `QUICK_REFERENCE.md` and consolidated `.env` configuration requirements.
+- Cleaned up `.gitignore` and removed deprecated `localtunnel` references.

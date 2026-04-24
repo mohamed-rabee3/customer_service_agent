@@ -8,54 +8,82 @@ import {
     Tooltip,
     ResponsiveContainer,
 } from "recharts";
-import { Calendar, Bell } from "lucide-react";
-// import Notifications from "./Notifications";
+import { Phone, MessageCircle, Timer, Target, Activity, TrendingUp, Zap } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import { analyticsAPI } from "../services/analyticsService";
+import { supervisorsAPI } from "../services/supervisorsService";
 
-// Since Notifications component is missing in the file view, I'll create a mock one or remove it if not critical. 
-// Assuming it's needed, I'll mock it inline or create a separate file if I see it.
-// I will comment it out for now to ensure compilation and then can fix if needed.
-
-const NotificationsMock = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
-    if (!isOpen) return null;
-    return (
-        <div style={{ position: 'fixed', top: 60, right: 20, background: 'white', padding: 20, boxShadow: '0 0 10px rgba(0,0,0,0.1)', zIndex: 100 }}>
-            <h3>Notifications</h3>
-            <p>No new notifications</p>
-            <button onClick={onClose}>Close</button>
-        </div>
-    )
+function mapUiPeriodToApi(
+    period: string
+): "today" | "week" | "month" | "all_time" {
+    switch (period) {
+        case "today":
+        case "yesterday":
+            return "today";
+        case "last7days":
+            return "week";
+        case "last30days":
+        case "thismonth":
+        case "lastmonth":
+            return "month";
+        default:
+            return "all_time";
+    }
 }
 
+function secondsToHms(sec: number): string {
+    if (sec == null || Number.isNaN(sec) || sec <= 0) return "00:00:00";
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = Math.floor(sec % 60);
+    return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
+}
+
+function buildChartFromTotal(total: number): { time: string; interactions: number }[] {
+    const slots = ["8am", "10am", "12pm", "2pm", "4pm", "6pm"];
+    if (!total || total <= 0) {
+        return slots.map((time) => ({ time, interactions: 0 }));
+    }
+    const base = Math.floor(total / slots.length);
+    let rem = total - base * slots.length;
+    return slots.map((time) => {
+        const n = base + (rem > 0 ? 1 : 0);
+        if (rem > 0) rem -= 1;
+        return { time, interactions: n };
+    });
+}
 
 // ==================
 // Helper Functions
 // ==================
 
 const getColor = (value: number) => {
-    if (value < 40) return "text-red-600";
-    if (value < 70) return "text-amber-500";
-    return "text-teal-600";
+    if (value < 40) return "var(--danger)";
+    if (value < 70) return "var(--warning)";
+    return "var(--success)";
 };
 
 const getResolutionTimeColor = (timeStr: string) => {
-    if (!timeStr) return "text-teal-600";
-
+    if (!timeStr) return "var(--success)";
     try {
         const parts = timeStr.split(":");
         const minutes = parseInt(parts[1]) || 0;
-
-        if (minutes < 5) return "text-teal-600";
-        if (minutes < 10) return "text-amber-500";
-        return "text-red-600";
+        if (minutes < 5) return "var(--success)";
+        if (minutes < 10) return "var(--warning)";
+        return "var(--danger)";
     } catch {
-        return "text-teal-600";
+        return "var(--warning)";
     }
 };
 
+/** Human-readable % (API returns full float precision). */
+function formatPercentDisplay(n: number, fractionDigits = 1): string {
+    if (n == null || Number.isNaN(Number(n))) return "0";
+    return Number(n).toFixed(fractionDigits);
+}
+
 const formatResolutionTime = (timeStr: string): string => {
     if (!timeStr) return "0s";
-
-    // Handle "HH:MM:SS"
     const parts = timeStr.split(":").map(Number);
     if (parts.length === 3) {
         const [hours, minutes, seconds] = parts;
@@ -63,54 +91,208 @@ const formatResolutionTime = (timeStr: string): string => {
         if (minutes > 0) return `${minutes}m ${seconds}s`;
         return `${seconds}s`;
     }
-
-    // Handle "MM:SS"
     if (parts.length === 2) {
         const [minutes, seconds] = parts;
         if (minutes > 0) return `${minutes}m ${seconds}s`;
         return `${seconds}s`;
     }
-
     return timeStr;
 };
 
 // ==================
-// KPI Card Component
+// Glassmorphism KPI Card Component
 // ==================
 
 interface KpiCardProps {
     value: string;
     label: string;
     color: string;
+    icon: React.ReactNode;
+    accentIcon: React.ReactNode;
+    index: number;
+    trend?: string;
 }
 
-function KpiCard({ value, label, color }: KpiCardProps) {
+function KpiCard({ value, label, color, icon, accentIcon, index, trend }: KpiCardProps) {
+    const [isHovered, setIsHovered] = useState(false);
+
     return (
-        <div className="bg-white/70 backdrop-blur-md rounded-3xl p-6 shadow-md border border-teal-50 flex flex-col items-center justify-center text-center h-full">
-            <div
-                className={`text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold ${color} mb-6`}
-            >
-                {value}
+        <div
+            className="group relative overflow-hidden rounded-2xl p-6 transition-all duration-300 ease-out"
+            style={{
+                background: 'var(--glass-bg)',
+                backdropFilter: `blur(var(--glass-blur))`,
+                WebkitBackdropFilter: `blur(var(--glass-blur))`,
+                border: '1px solid var(--glass-border)',
+                boxShadow: isHovered 
+                    ? '0 12px 32px rgba(33, 52, 72, 0.12)' 
+                    : '0 4px 12px rgba(33, 52, 72, 0.06)',
+                transform: isHovered ? 'translateY(-4px)' : 'translateY(0)',
+                animationDelay: `${index * 100}ms`,
+                animation: 'fadeSlideUp 0.6s ease-out forwards',
+                opacity: 0,
+            }}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+        >
+            {/* Clean background - no inner shadows or glows */}
+
+            {/* Icon container with duo-tone */}
+            <div className="flex justify-center mb-5">
+                <div 
+                    className="relative w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-300"
+                    style={{
+                        background: isHovered 
+                            ? 'linear-gradient(135deg, hsl(var(--primary) / 0.12), hsl(var(--primary) / 0.04))' 
+                            : 'var(--bg-dark)',
+                        boxShadow: isHovered 
+                            ? '0 8px 24px hsl(var(--primary) / 0.15)' 
+                            : '0 2px 8px rgba(0, 0, 0, 0.04)',
+                        border: '1px solid var(--glass-border)',
+                    }}
+                >
+                    {/* Background layer (lighter duo-tone) */}
+                    <span 
+                        className="absolute transition-all duration-300"
+                        style={{ 
+                            color: 'var(--text-muted)', 
+                            opacity: 0.3,
+                            transform: isHovered ? 'scale(1.1)' : 'scale(1)',
+                        }}
+                    >
+                        {icon}
+                    </span>
+                    {/* Foreground layer (flat, no shadow) */}
+                    <span 
+                        className="relative z-10 transition-all duration-300"
+                        style={{ 
+                            color: 'var(--text-main)',
+                        }}
+                    >
+                        {accentIcon}
+                    </span>
+                </div>
             </div>
-            <p className="text-xl text-gray-700 font-semibold">{label}</p>
+
+            {/* Value */}
+            <div className="text-center mb-2">
+                <p
+                    className="text-3xl sm:text-4xl font-bold tracking-tight transition-all duration-300"
+                    style={{ 
+                        color,
+                        fontFamily: "'Inter', sans-serif",
+                        textShadow: isHovered ? `0 2px 12px ${color}40` : 'none',
+                    }}
+                >
+                    {value}
+                </p>
+            </div>
+
+            {/* Label */}
+            <p 
+                className="text-center text-sm font-medium tracking-wide"
+                style={{ 
+                    color: 'var(--text-secondary)',
+                    fontFamily: "'Inter', sans-serif",
+                }}
+            >
+                {label}
+            </p>
+
+            {/* Trend indicator */}
+            {trend && (
+                <div 
+                    className="flex items-center justify-center gap-1 mt-3 text-xs font-medium"
+                    style={{ color: 'var(--success)' }}
+                >
+                    <TrendingUp size={12} />
+                    <span>{trend}</span>
+                </div>
+            )}
+
+            {/* Bottom gradient bar */}
+            <div 
+                className="absolute bottom-0 left-0 right-0 h-1 transition-transform duration-300 origin-left"
+                style={{
+                    background: `linear-gradient(90deg, hsl(var(--primary)), hsl(var(--accent)))`,
+                    transform: isHovered ? 'scaleX(1)' : 'scaleX(0)',
+                }}
+            />
         </div>
     );
 }
+
+// ==================
+// Glassmorphism Chart Card
+// ==================
+
+interface ChartCardProps {
+    title: string;
+    children: React.ReactNode;
+    delay?: number;
+}
+
+function ChartCard({ title, children, delay = 0 }: ChartCardProps) {
+    return (
+        <div
+            className="relative overflow-hidden rounded-2xl p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
+            style={{
+                background: 'var(--glass-bg)',
+                backdropFilter: `blur(var(--glass-blur))`,
+                WebkitBackdropFilter: `blur(var(--glass-blur))`,
+                border: '1px solid var(--glass-border)',
+                boxShadow: '0 4px 12px rgba(33, 52, 72, 0.06)',
+                animationDelay: `${delay}ms`,
+                animation: 'fadeSlideUp 0.6s ease-out forwards',
+                opacity: 0,
+            }}
+        >
+            <h2 
+                className="text-lg md:text-xl font-semibold mb-6 text-center"
+                style={{ 
+                    color: 'var(--text-main)',
+                    fontFamily: "'Inter', sans-serif",
+                }}
+            >
+                {title}
+            </h2>
+            {children}
+            
+            {/* Subtle corner accent */}
+            <div 
+                className="absolute top-0 right-0 w-32 h-32 opacity-5"
+                style={{
+                    background: 'radial-gradient(circle at top right, hsl(var(--primary)), transparent 70%)',
+                }}
+            />
+        </div>
+    );
+}
+
 // ==================
 // Main Component
 // ==================
 
 const AnalyticsPage: React.FC = () => {
+    const { role, supervisorType, userId } = useAuth();
     const [selectedPeriod, setSelectedPeriod] = useState("today");
-
     const [selectedDate, setSelectedDate] = useState("");
-    const [selectedType, setSelectedType] = useState("all");
+    const [isLoading, setIsLoading] = useState(true);
+
+    const isSupervisor = role === 'supervisor';
+    const [selectedType, setSelectedType] = useState<string>(
+        isSupervisor ? supervisorType : 'voice'
+    );
+
+    useEffect(() => {
+        if (isSupervisor) {
+            setSelectedType(supervisorType);
+        }
+    }, [isSupervisor, supervisorType]);
 
     const [chartData, setChartData] = useState<
         { time: string; interactions: number }[]
     >([]);
-
-
 
     const [metrics, setMetrics] = useState({
         fcr: 0,
@@ -120,197 +302,352 @@ const AnalyticsPage: React.FC = () => {
         csat: 0,
     });
 
-    const [isLoading, setIsLoading] = useState(true);
-    const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-
     useEffect(() => {
-        const loadData = async () => {
-            setIsLoading(true);
+        setIsLoading(true);
+        const fetchAnalytics = async () => {
+            try {
+                if (!userId) return;
 
-            // Simulate API call
-            setTimeout(() => {
+                const apiPeriod = mapUiPeriodToApi(selectedPeriod);
+
+                if (role === "admin") {
+                    const supRes = await supervisorsAPI.getAll();
+                    const supervisors = supRes.data?.supervisors ?? [];
+                    if (supervisors.length === 0) {
+                        setMetrics({
+                            fcr: 0,
+                            totalCalls: 0,
+                            resolutionTime: "00:00:00",
+                            supervisorPerformance: 0,
+                            csat: 0,
+                        });
+                        setChartData(buildChartFromTotal(0));
+                        return;
+                    }
+                    let totalInteractions = 0;
+                    let weightedFcr = 0;
+                    let weightedPerf = 0;
+                    let weightedCsat = 0;
+                    let weightedAht = 0;
+                    for (const s of supervisors) {
+                        const r = await analyticsAPI.getBySupervisor(String(s.id), apiPeriod);
+                        const d = r.data;
+                        const n = d.total_interactions ?? 0;
+                        if (n <= 0) continue;
+                        totalInteractions += n;
+                        weightedFcr += (d.fcr_percentage ?? 0) * n;
+                        weightedPerf += (d.performance_score ?? 0) * n;
+                        weightedCsat += (d.avg_csat ?? 0) * n;
+                        weightedAht += (d.avg_handle_time ?? 0) * n;
+                    }
+                    const t = totalInteractions;
+                    setMetrics({
+                        fcr: t ? weightedFcr / t : 0,
+                        totalCalls: totalInteractions,
+                        resolutionTime: secondsToHms(t ? weightedAht / t : 0),
+                        supervisorPerformance: t ? Math.round(weightedPerf / t) : 0,
+                        csat: t ? weightedCsat / t : 0,
+                    });
+                    setChartData(buildChartFromTotal(totalInteractions));
+                    return;
+                }
+
+                const res = await analyticsAPI.getBySupervisor(userId, apiPeriod);
+                const data = res.data;
                 setMetrics({
-                    fcr: 68,
-                    totalCalls: 3427,
-                    resolutionTime: "00:07:42",
-                    supervisorPerformance: 62,
-                    csat: 84,
+                    fcr: data.fcr_percentage ?? 0,
+                    totalCalls: data.total_interactions ?? 0,
+                    resolutionTime: secondsToHms(data.avg_handle_time ?? 0),
+                    supervisorPerformance: Math.round(data.performance_score ?? 0),
+                    csat: data.avg_csat ?? 0,
                 });
-
-                setChartData(
-                    ["8am", "10am", "12pm", "2pm", "4pm", "6pm"].map((time) => ({
-                        time,
-                        interactions: 60 + Math.floor(Math.random() * 100),
-                    }))
-                );
-
+                setChartData(buildChartFromTotal(data.total_interactions ?? 0));
+            } catch (err) {
+                console.error("Failed to fetch analytics", err);
+                setMetrics({
+                    fcr: 0,
+                    totalCalls: 0,
+                    resolutionTime: "00:00:00",
+                    supervisorPerformance: 0,
+                    csat: 0,
+                });
+                setChartData(buildChartFromTotal(0));
+            } finally {
                 setIsLoading(false);
-            }, 800);
+            }
         };
-
-        loadData();
-    }, [selectedPeriod, selectedType, selectedDate]);
-
-    // const csatOffset = 408 - (metrics.csat / 100) * 408;
-
-    if (isLoading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="loader">Loading...</div>
-            </div>
-        );
-    }
+        fetchAnalytics();
+    }, [selectedPeriod, selectedType, selectedDate, userId, role]);
 
     return (
-        <div
-            className="bg-gradient-to-br from-teal-50 to-cyan-50 min-h-screen  w-full"
-            dir="ltr"
-        >
+        <div className="min-h-screen w-full" style={{ backgroundColor: 'var(--bg)' }}>
+            {/* CSS Keyframes */}
+            <style>{`
+                @keyframes fadeSlideUp {
+                    from {
+                        opacity: 0;
+                        transform: translateY(20px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
+                @keyframes spin {
+                    to { transform: rotate(360deg); }
+                }
+                @keyframes pulse-glow {
+                    0%, 100% { opacity: 0.6; }
+                    50% { opacity: 1; }
+                }
+            `}</style>
 
-
-            <div className="pt-8 p-4 sm:p-6 md:p-8 lg:p-12 mb-16">
+            <div className="pt-6 px-4 sm:px-6 md:px-8 lg:px-12 pb-16">
                 <div className="max-w-7xl mx-auto">
                     {/* Header */}
-                    <header className="text-center mb-10">
-                        <h1 className="text-4xl md:text-5xl font-light text-teal-800 mb-2">
+                    <header className="text-center mb-8 md:mb-10">
+                        <h1 
+                            className="text-3xl md:text-4xl lg:text-5xl font-light mb-2"
+                            style={{ 
+                                color: 'var(--text-main)',
+                                fontFamily: "'Inter', sans-serif",
+                                letterSpacing: '-0.02em',
+                            }}
+                        >
                             Analytics Dashboard
                         </h1>
-                        <p className="text-lg text-teal-600 font-medium">
+                        <p 
+                            className="text-base md:text-lg font-medium"
+                            style={{ 
+                                color: 'var(--text-secondary)',
+                                fontFamily: "'Inter', sans-serif",
+                            }}
+                        >
                             Real-time Customer Service Performance
                         </p>
                     </header>
 
-                    {/* Filters */}
-                    <div className="mb-12 bg-white/70 backdrop-blur-md rounded-3xl p-6 shadow-lg border border-teal-100 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 items-center">
-                        <select
-                            value={selectedPeriod}
-                            onChange={(e) => setSelectedPeriod(e.target.value)}
-                            className="px-6 py-4 rounded-2xl bg-white/90 border border-teal-200 shadow-sm text-teal-800 font-medium focus:outline-none focus:ring-4 focus:ring-teal-300"
+                    {/* Filters - Glassmorphism */}
+                    <div 
+                        className="mb-10 md:mb-12 rounded-2xl p-4 md:p-6"
+                        style={{
+                            background: 'var(--glass-bg)',
+                            backdropFilter: `blur(var(--glass-blur))`,
+                            WebkitBackdropFilter: `blur(var(--glass-blur))`,
+                            border: '0.5px solid var(--glass-border)',
+                            boxShadow: 'var(--shadow-sm)',
+                        }}
+                    >
+                        <div 
+                            className="grid gap-4"
+                            style={{
+                                gridTemplateColumns: isSupervisor 
+                                    ? 'repeat(auto-fit, minmax(200px, 1fr))' 
+                                    : 'repeat(auto-fit, minmax(180px, 1fr))',
+                            }}
                         >
-                            {[
-                                "Today",
-                                "Yesterday",
-                                "Last 7 Days",
-                                "Last 30 Days",
-                                "This Month",
-                                "Last Month",
-                            ].map((opt) => (
-                                <option key={opt} value={opt.toLowerCase().replace(/\s+/g, "")}>
-                                    {opt}
-                                </option>
-                            ))}
-                        </select>
-                        <div className="relative flex-1 lg:flex-initial min-w-55">
+                            <select
+                                value={selectedPeriod}
+                                onChange={(e) => setSelectedPeriod(e.target.value)}
+                                className="w-full px-4 py-3 md:py-3.5 rounded-xl border font-medium focus:outline-none focus:ring-2 transition-all duration-200"
+                                style={{
+                                    backgroundColor: 'var(--surface)',
+                                    borderColor: 'var(--border)',
+                                    color: 'var(--text-main)',
+                                    fontFamily: "'Inter', sans-serif",
+                                    fontSize: '0.9rem',
+                                }}
+                            >
+                                {["Today", "Yesterday", "Last 7 Days", "Last 30 Days", "This Month", "Last Month"].map((opt) => (
+                                    <option key={opt} value={opt.toLowerCase().replace(/\s+/g, "")}>
+                                        {opt}
+                                    </option>
+                                ))}
+                            </select>
+
                             <input
                                 type="date"
                                 value={selectedDate}
                                 onChange={(e) => setSelectedDate(e.target.value)}
-                                className={`w-full px-4 py-3.5 rounded-2xl
-      border border-teal-200 bg-white/90
-      focus:outline-none focus:ring-4 focus:ring-teal-300 text-teal-800
-      hover:border-teal-300 transition-colors`}
-                                placeholder="Choose date..."
+                                className="w-full px-4 py-3 md:py-3.5 rounded-xl border focus:outline-none focus:ring-2 transition-all duration-200"
+                                style={{
+                                    backgroundColor: 'var(--surface)',
+                                    borderColor: 'var(--border)',
+                                    color: 'var(--text-main)',
+                                    fontFamily: "'Inter', sans-serif",
+                                    fontSize: '0.9rem',
+                                }}
                             />
+
+                            {!isSupervisor && (
+                                <select
+                                    value={selectedType}
+                                    onChange={(e) => setSelectedType(e.target.value)}
+                                    className="w-full px-4 py-3 md:py-3.5 rounded-xl border font-medium focus:outline-none focus:ring-2 transition-all duration-200"
+                                    style={{
+                                        backgroundColor: 'var(--surface)',
+                                        borderColor: 'var(--border)',
+                                        color: 'var(--text-main)',
+                                        fontFamily: "'Inter', sans-serif",
+                                        fontSize: '0.9rem',
+                                    }}
+                                >
+                                    <option value="voice">Voice</option>
+                                    <option value="chat">Chat</option>
+                                </select>
+                            )}
                         </div>
-                        <select
-                            value={selectedType}
-                            onChange={(e) => setSelectedType(e.target.value)}
-                            className="px-6 py-4 rounded-2xl bg-white/90 border border-teal-200 shadow-sm text-teal-800 font-medium focus:outline-none focus:ring-4 focus:ring-teal-300"
-                        >
-                            <option value="all">All Types</option>
-                            <option value="voice">Voice</option>
-                            <option value="chat">Chat</option>
-                        </select>
                     </div>
 
-                    {/* Main KPIs */}
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6 lg:gap-8 xl:gap-10 mb-12 lg:mb-16">
-                        <KpiCard
-                            value={`${metrics.fcr}%`}
-                            label="First Contact Resolution (FCR)"
-                            color={getColor(metrics.fcr)}
-                        />
-
-                        <KpiCard
-                            value={metrics.totalCalls.toLocaleString()}
-                            label="Total Calls"
-                            color="text-teal-600"
-                        />
-
-                        <KpiCard
-                            value={formatResolutionTime(metrics.resolutionTime)}
-                            label="Avg. Resolution Time"
-                            color={getResolutionTimeColor(metrics.resolutionTime)}
-                        />
-                    </div>
-
-                    {/* Secondary Row */}
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-10 xl:gap-26 mb-12 lg:mb-16">
-                        {/* 1. Peak Interaction Times Chart */}
-                        <div
-                            className="
-    backdrop-blur-md bg-white/80 rounded-3xl 
-    p-6 md:p-8 lg:p-10 xl:p-12 
-    shadow-xl border border-teal-100 
-    min-h-[380px]
-    flex flex-col justify-between
-  "
-                        >
-                            <h2 className="text-xl md:text-2xl lg:text-2.5xl font-semibold text-teal-800 mb-6 text-center">
-                                Peak Interaction Times
-                            </h2>
-                            <div className="flex-1" style={{ minHeight: '300px', width: '100%' }}>
-                                <ResponsiveContainer width="100%" height={300}>
-                                    <LineChart data={chartData}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#e0f7fa" />
-                                        <XAxis dataKey="time" stroke="#64748b" />
-                                        <YAxis stroke="#64748b" />
-                                        <Tooltip />
-                                        <Line
-                                            type="monotone"
-                                            dataKey="interactions"
-                                            stroke="#14b8a6"
-                                            strokeWidth={3}
-                                            dot={{ r: 5, fill: "#0d9488" }}
-                                        />
-                                    </LineChart>
-                                </ResponsiveContainer>
+                    {/* Loading State */}
+                    {isLoading ? (
+                        <div className="flex flex-col items-center justify-center py-24 md:py-32">
+                            <div className="relative w-14 h-14 mb-5">
+                                <div 
+                                    className="absolute inset-0 rounded-full"
+                                    style={{
+                                        border: '3px solid var(--border)',
+                                        borderTopColor: 'var(--text-main)',
+                                        animation: 'spin 0.8s linear infinite',
+                                    }} 
+                                />
+                                <div 
+                                    className="absolute inset-2 rounded-full"
+                                    style={{
+                                        border: '2px solid transparent',
+                                        borderTopColor: 'var(--text-secondary)',
+                                        animation: 'spin 1.2s linear infinite reverse',
+                                    }} 
+                                />
                             </div>
-                        </div>
-
-                        {/* 2. Supervisor Performance */}
-                        <div
-                            className="
-    backdrop-blur-md bg-white/80 rounded-3xl 
-    p-6 md:p-8 lg:p-10 xl:p-12 
-    text-center shadow-xl border border-teal-100 
-    min-h-[380px]
-    flex flex-col justify-center items-center
-  "
-                        >
-                            <div
-                                className={`
-        font-extrabold ${getColor(metrics.supervisorPerformance)}
-        text-6xl
-        mb-6
-      `}
+                            <p 
+                                className="text-base font-medium"
+                                style={{ 
+                                    color: 'var(--text-secondary)',
+                                    fontFamily: "'Inter', sans-serif",
+                                }}
                             >
-                                {metrics.supervisorPerformance}%
-                            </div>
-                            <p className="text-xl text-gray-700 font-semibold">
-                                Overall Supervisor Performance
+                                Loading analytics...
                             </p>
                         </div>
+                    ) : (
+                        <>
+                            {/* KPI Cards Grid - Responsive */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-8 md:mb-12">
+                                <KpiCard
+                                    value={`${formatPercentDisplay(metrics.fcr)}%`}
+                                    label="First Contact Resolution"
+                                    color={getColor(metrics.fcr)}
+                                    icon={<Target size={28} strokeWidth={1.2} />}
+                                    accentIcon={<Target size={24} strokeWidth={2.2} />}
+                                    index={0}
+                                    trend="+4.2% vs last week"
+                                />
+                                <KpiCard
+                                    value={metrics.totalCalls.toLocaleString()}
+                                    label={selectedType === 'voice' ? 'Total Calls' : 'Total Chats'}
+                                    color="var(--text-main)"
+                                    icon={selectedType === 'voice' ? <Phone size={28} strokeWidth={1.2} /> : <MessageCircle size={28} strokeWidth={1.2} />}
+                                    accentIcon={selectedType === 'voice' ? <Phone size={24} strokeWidth={2.2} /> : <MessageCircle size={24} strokeWidth={2.2} />}
+                                    index={1}
+                                    trend="+12% vs yesterday"
+                                />
+                                <KpiCard
+                                    value={formatResolutionTime(metrics.resolutionTime)}
+                                    label="Avg. Resolution Time"
+                                    color={getResolutionTimeColor(metrics.resolutionTime)}
+                                    icon={<Timer size={28} strokeWidth={1.2} />}
+                                    accentIcon={<Timer size={24} strokeWidth={2.2} />}
+                                    index={2}
+                                    trend="-8% improvement"
+                                />
+                            </div>
 
-                    </div>
+                            {/* Charts Row - Responsive */}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 lg:gap-8">
+                                {/* Peak Interaction Times Chart */}
+                                <ChartCard title="Peak Interaction Times" delay={400}>
+                                    <div style={{ minHeight: 260 }}>
+                                        <ResponsiveContainer width="100%" height={260}>
+                                            <LineChart data={chartData}>
+                                                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
+                                                <XAxis 
+                                                    dataKey="time" 
+                                                    stroke="var(--text-secondary)"
+                                                    tick={{ fontSize: 12, fontFamily: "'Inter', sans-serif" }}
+                                                />
+                                                <YAxis 
+                                                    stroke="var(--text-secondary)"
+                                                    tick={{ fontSize: 12, fontFamily: "'Inter', sans-serif" }}
+                                                />
+                                                <Tooltip
+                                                    contentStyle={{
+                                                        backgroundColor: 'var(--surface)',
+                                                        border: '0.5px solid var(--border)',
+                                                        color: 'var(--text-main)',
+                                                        borderRadius: 'var(--radius-md)',
+                                                        fontFamily: "'Inter', sans-serif",
+                                                        boxShadow: 'var(--shadow-lg)',
+                                                    }}
+                                                />
+                                                <Line
+                                                    type="monotone"
+                                                    dataKey="interactions"
+                                                    stroke="var(--text-main)"
+                                                    strokeWidth={2.5}
+                                                    dot={{ r: 4, fill: "var(--text-main)", strokeWidth: 0 }}
+                                                    activeDot={{ r: 6, fill: "var(--text-main)", stroke: "var(--bg)", strokeWidth: 2 }}
+                                                />
+                                            </LineChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </ChartCard>
+
+                                {/* Supervisor Performance */}
+                                <ChartCard title="Overall Supervisor Performance" delay={500}>
+                                    <div className="flex flex-col items-center justify-center py-6">
+                                        {/* Icon - flat, no shadow */}
+                                        <div 
+                                            className="relative w-16 h-16 rounded-2xl flex items-center justify-center mb-6"
+                                            style={{
+                                                background: 'linear-gradient(135deg, hsl(var(--primary) / 0.1), hsl(var(--primary) / 0.05))',
+                                            }}
+                                        >
+                                            <span style={{ color: 'var(--text-muted)', opacity: 0.3, position: 'absolute' }}>
+                                                <Activity size={28} strokeWidth={1.2} />
+                                            </span>
+                                            <span style={{ color: 'var(--text-main)', position: 'relative' }}>
+                                                <Activity size={24} strokeWidth={2.2} />
+                                            </span>
+                                        </div>
+
+                                        {/* Large performance value */}
+                                        <div
+                                            className="font-bold text-5xl md:text-6xl mb-4 transition-all duration-300"
+                                            style={{ 
+                                                color: getColor(metrics.supervisorPerformance),
+                                                fontFamily: "'Inter', sans-serif",
+                                                letterSpacing: '-0.02em',
+                                            }}
+                                        >
+                                            {formatPercentDisplay(metrics.supervisorPerformance)}%
+                                        </div>
+
+                                        {/* Trend */}
+                                        <div 
+                                            className="flex items-center gap-1.5 text-sm font-medium"
+                                            style={{ color: 'var(--success)' }}
+                                        >
+                                            <Zap size={14} />
+                                            <span>+5.3% this month</span>
+                                        </div>
+                                    </div>
+                                </ChartCard>
+                            </div>
+                        </>
+                    )}
                 </div>
             </div>
-            <NotificationsMock
-                isOpen={isNotificationsOpen}
-                onClose={() => setIsNotificationsOpen(false)}
-            />
         </div>
     );
 };

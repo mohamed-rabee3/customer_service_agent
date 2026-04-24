@@ -4,40 +4,28 @@ import {
   Modal,
   Box,
   Typography,
-  Grid,
   TextField,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
   Button,
+  Stack,
 } from '@mui/material';
-import { SelectChangeEvent } from '@mui/material/Select'; // الإمبورت المهم ده
+import { SelectChangeEvent } from '@mui/material/Select';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface SupervisorFormModalProps {
   open: boolean;
   onClose: () => void;
   supervisor?: {
-    id?: number;
+    id?: string | number;
     name: string;
     type: 'voice' | 'chat';
     email: string;
-  } | null; // null = add mode, object = edit mode
+  } | null;
   onSubmit: (data: { name: string; type: 'voice' | 'chat'; email: string; password?: string }) => void;
 }
-
-const modalStyle = {
-  position: 'absolute' as const,
-  top: '50%',
-  left: '50%',
-  transform: 'translate(-50%, -50%)',
-  width: { xs: '90%', sm: 500 },
-  bgcolor: 'background.paper',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-lg)',
-  boxShadow: 'var(--shadow-lg)',
-  p: 4,
-};
 
 const SupervisorFormModal: React.FC<SupervisorFormModalProps> = ({
   open,
@@ -54,13 +42,23 @@ const SupervisorFormModal: React.FC<SupervisorFormModalProps> = ({
     password: '',
   });
 
+  React.useEffect(() => {
+    if (open) {
+      setFormData({
+        name: supervisor?.name || '',
+        type: (supervisor?.type || 'voice') as 'voice' | 'chat',
+        email: supervisor?.email || '',
+        password: '',
+      });
+    }
+  }, [open, supervisor]);
+
   const handleChange = (field: keyof typeof formData) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
     setFormData({ ...formData, [field]: e.target.value });
   };
 
-  // التعديل الصحيح لـ onChange في Select
   const handleSelectChange = (event: SelectChangeEvent<'voice' | 'chat'>) => {
     setFormData({ ...formData, type: event.target.value as 'voice' | 'chat' });
   };
@@ -76,75 +74,161 @@ const SupervisorFormModal: React.FC<SupervisorFormModalProps> = ({
   };
 
   return (
-    <Modal open={open} onClose={onClose}>
-      <Box sx={modalStyle}>
-        <Typography variant="h5" fontWeight={700} gutterBottom color="var(--text-main)">
-          {isEdit ? 'Edit Supervisor' : 'Add New Supervisor'}
-        </Typography>
+    <AnimatePresence>
+      {open && (
+        <Modal open={open} onClose={onClose} closeAfterTransition>
+          <Box sx={{
+            position: 'fixed',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            p: 2,
+          }}>
+            <motion.div
+              initial={{ opacity: 0, y: -60, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -40, scale: 0.95 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              style={{
+                width: '95%',
+                maxWidth: 500,
+                maxHeight: '85vh',
+                display: 'flex',
+                flexDirection: 'column',
+                outline: 'none',
+              }}
+            >
+              <Box sx={{
+                bgcolor: 'var(--modal-bg)',
+                border: '1px solid var(--modal-border)',
+                borderRadius: 'var(--radius-lg)',
+                boxShadow: 'var(--modal-shadow)',
+                display: 'flex',
+                flexDirection: 'column',
+                maxHeight: '85vh',
+                transition: 'background-color 0.3s ease-in-out, border-color 0.3s ease-in-out',
+              }}>
+                {/* Scrollable Body */}
+                <Box className="modal-scroll" sx={{ p: 4, overflowY: 'auto', flex: 1 }}>
+                  <Typography variant="h5" fontWeight={700} gutterBottom color="var(--modal-text)">
+                    {isEdit ? 'Edit Supervisor' : 'Add New Supervisor'}
+                  </Typography>
 
-        <Grid container spacing={3} sx={{ mt: 1 }}>
-          <Grid item xs={12}>
-            <TextField
-              fullWidth
-              label="Supervisor Name"
-              variant="outlined"
-              value={formData.name}
-              onChange={handleChange('name')}
-              required
-            />
-          </Grid>
+                  <Stack spacing={3} sx={{ mt: 2 }}>
+                    <TextField
+                      fullWidth
+                      label="Supervisor Name"
+                      variant="outlined"
+                      value={formData.name}
+                      onChange={handleChange('name')}
+                      required
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          color: 'var(--modal-text)',
+                          '& fieldset': { borderColor: 'var(--modal-border)' },
+                          '&:hover fieldset': { borderColor: 'var(--modal-text-muted)' },
+                        },
+                        '& .MuiInputLabel-root': { color: 'var(--modal-text-secondary)' },
+                      }}
+                    />
 
-          <Grid item xs={12}>
-            <FormControl fullWidth>
-              <InputLabel>Supervisor Type</InputLabel>
-              <Select
-                value={formData.type}
-                onChange={handleSelectChange}
-                label="Supervisor Type"
-              >
-                <MenuItem value="voice">Voice Agent</MenuItem>
-                <MenuItem value="chat">Chat Agent</MenuItem>
-              </Select>
-            </FormControl>
-          </Grid>
+                    <FormControl fullWidth>
+                      <InputLabel sx={{ color: 'var(--modal-text-secondary)' }}>Supervisor Type</InputLabel>
+                      <Select
+                        value={formData.type}
+                        onChange={handleSelectChange}
+                        label="Supervisor Type"
+                        sx={{
+                          color: 'var(--modal-text)',
+                          '& fieldset': { borderColor: 'var(--modal-border)' },
+                          '&:hover fieldset': { borderColor: 'var(--modal-text-muted)' },
+                          '& .MuiSvgIcon-root': { color: 'var(--modal-text-muted)' },
+                        }}
+                      >
+                        <MenuItem value="voice">Voice Agent</MenuItem>
+                        <MenuItem value="chat">Chat Agent</MenuItem>
+                      </Select>
+                    </FormControl>
 
-          <Grid item xs={12}>
-            <TextField
-              fullWidth
-              label="Email"
-              type="email"
-              variant="outlined"
-              value={formData.email}
-              onChange={handleChange('email')}
-              required
-            />
-          </Grid>
+                    <TextField
+                      fullWidth
+                      label="Email"
+                      type="email"
+                      variant="outlined"
+                      value={formData.email}
+                      onChange={handleChange('email')}
+                      required
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          color: 'var(--modal-text)',
+                          '& fieldset': { borderColor: 'var(--modal-border)' },
+                          '&:hover fieldset': { borderColor: 'var(--modal-text-muted)' },
+                        },
+                        '& .MuiInputLabel-root': { color: 'var(--modal-text-secondary)' },
+                      }}
+                    />
 
-          {!isEdit && (
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="Temporary Password"
-                type="password"
-                variant="outlined"
-                value={formData.password}
-                onChange={handleChange('password')}
-                required
-              />
-            </Grid>
-          )}
-        </Grid>
+                    {!isEdit && (
+                      <TextField
+                        fullWidth
+                        label="Temporary Password"
+                        type="password"
+                        variant="outlined"
+                        value={formData.password}
+                        onChange={handleChange('password')}
+                        required
+                        sx={{
+                          '& .MuiOutlinedInput-root': {
+                            color: 'var(--modal-text)',
+                            '& fieldset': { borderColor: 'var(--modal-border)' },
+                            '&:hover fieldset': { borderColor: 'var(--modal-text-muted)' },
+                          },
+                          '& .MuiInputLabel-root': { color: 'var(--modal-text-secondary)' },
+                        }}
+                      />
+                    )}
+                  </Stack>
+                </Box>
 
-        <Box sx={{ mt: 4, display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
-          <Button variant="outlined" color="inherit" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button variant="contained" color="primary" onClick={handleSubmit}>
-            {isEdit ? 'Save Changes' : 'Add Supervisor'}
-          </Button>
-        </Box>
-      </Box>
-    </Modal>
+                {/* Sticky Footer */}
+                <Box sx={{
+                  p: 3,
+                  borderTop: '1px solid var(--modal-border)',
+                  display: 'flex',
+                  gap: 2,
+                  justifyContent: 'flex-end',
+                  flexShrink: 0,
+                }}>
+                  <Button 
+                    variant="contained" 
+                    onClick={onClose}
+                    sx={{
+                      bgcolor: 'var(--action-danger)',
+                      color: '#ffffff',
+                      '&:hover': { bgcolor: 'var(--action-danger-hover)' },
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    variant="contained" 
+                    onClick={handleSubmit}
+                    sx={{
+                      bgcolor: 'var(--action-primary)',
+                      color: '#ffffff',
+                      '&:hover': { bgcolor: 'var(--action-primary-hover)' },
+                    }}
+                  >
+                    {isEdit ? 'Save Changes' : 'Add Supervisor'}
+                  </Button>
+                </Box>
+              </Box>
+            </motion.div>
+          </Box>
+        </Modal>
+      )}
+    </AnimatePresence>
   );
 };
 

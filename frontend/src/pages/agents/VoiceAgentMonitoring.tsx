@@ -1,148 +1,197 @@
-import React, { useState } from 'react';
-import { Box, Typography, Button, TextField, Menu, MenuItem, InputAdornment } from '@mui/material';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import ChatIcon from '@mui/icons-material/Chat';
-import SendIcon from '@mui/icons-material/Send';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import MicIcon from '@mui/icons-material/Mic'; // Added for Voice
+import React, { useState, useEffect, useRef } from 'react';
+import { Box, Typography, Card } from '@mui/material';
+import { toast } from 'react-toastify';
+import VoiceAgentCard from '@/components/agents/VoiceAgentCard';
+import AgentDetailModal from '@/components/agents/AgentDetailModal';
+import InjectBox from '@/components/agents/InjectBox';
+import { supervisorsAPI } from '@/services/supervisorsService';
+import '@/components/agents/VoiceAgentSelector.css';
 
-// Cloned from ChatMonitoring, tailored for Voice
+export type AgentBackendStatus = 'idle' | 'in_call' | 'in_chat' | 'paused';
+
+export interface VoiceAgent {
+  id: string;
+  name: string;
+  status: AgentBackendStatus;
+  sentiment: string;
+  performance: string;
+  feed: string;
+  current_interaction?: Record<string, unknown> | null;
+}
+
+const DEFAULT_FEED_IDLE = 'Waiting for call.';
+const DEFAULT_FEED_ACTIVE = 'Live interaction in progress.';
+
+const glassCardSx = {
+  textAlign: 'center' as const,
+  p: 3,
+  borderRadius: 'var(--radius-lg)',
+  background: 'var(--glass-bg)',
+  backdropFilter: 'blur(var(--glass-blur))',
+  WebkitBackdropFilter: 'blur(var(--glass-blur))',
+  border: '1px solid var(--glass-border)',
+  boxShadow: 'var(--shadow-md), inset 0 1px 0 rgba(255,255,255,0.2)',
+  transition: 'transform 0.4s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.4s ease, border-color 0.4s ease',
+  '&:hover': {
+    transform: 'translateY(-8px)',
+    boxShadow: 'var(--shadow-lg), 0 0 24px rgba(84,119,146,0.18)',
+    borderColor: 'var(--accent-hex)',
+  },
+};
+
+const mapDashboardAgent = (raw: Record<string, any>): VoiceAgent => {
+  const status = (raw.status as AgentBackendStatus) ?? 'idle';
+  const metrics = raw.latest_metrics as Record<string, any> | null | undefined;
+  const rawSent = (metrics?.sentiment as string | undefined) ?? 'neutral';
+  const sentiment = rawSent === 'critical' ? 'bad' : rawSent;
+  const rawScore = metrics?.satisfaction_score;
+  const score =
+    typeof rawScore === 'number'
+      ? rawScore
+      : typeof rawScore === 'string'
+        ? Number.parseFloat(rawScore)
+        : NaN;
+  const performance =
+    Number.isFinite(score)
+      ? `${Math.round(score)}%`
+      : typeof raw.performance_score === 'number'
+        ? `${Math.round(raw.performance_score)}%`
+        : '—';
+  const feed =
+    metrics?.feed_text ??
+    (status === 'idle' ? DEFAULT_FEED_IDLE : DEFAULT_FEED_ACTIVE);
+
+  return {
+    id: String(raw.id),
+    name: raw.name ?? 'Agent',
+    status,
+    sentiment,
+    performance,
+    feed,
+    current_interaction: raw.current_interaction ?? null,
+  };
+};
 
 const VoiceAgentMonitoring: React.FC = () => {
-    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-    const [selectedAgentName, setSelectedAgentName] = useState('VoiceAgent-1');
+  const [agents, setAgents] = useState<VoiceAgent[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<VoiceAgent | null>(null);
+  const [loading, setLoading] = useState(true);
+  const erroredRef = useRef(false);
 
-    const [agents] = useState([
-        { id: 1, name: 'VoiceAgent-1', status: 'active', sentiment: 'good', performance: '82%', feed: 'Handling customer complaint regarding billing.' },
-        { id: 2, name: 'VoiceAgent-2', status: 'idle', sentiment: 'neutral', performance: '88%', feed: 'Waiting for call.' },
-        { id: 3, name: 'VoiceAgent-3', status: 'active', sentiment: 'bad', performance: '75%', feed: 'Escalating issue to manager.' },
-    ]);
+  const fetchAgents = async () => {
+    try {
+      const res = await supervisorsAPI.getMyDashboard();
+      const list = Array.isArray(res.data?.agents) ? res.data.agents : [];
+      const voiceAgents: VoiceAgent[] = list
+        .filter((a: Record<string, any>) => (a.agent_type ?? 'voice') === 'voice')
+        .map(mapDashboardAgent);
+      setAgents(voiceAgents);
+      erroredRef.current = false;
+    } catch (err) {
+      if (!erroredRef.current) {
+        erroredRef.current = true;
+        console.error('Failed to load voice agents', err);
+        toast.error('Failed to load voice agents');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => {
-        setAnchorEl(event.currentTarget);
-    };
+  useEffect(() => {
+    fetchAgents();
+    const interval = setInterval(fetchAgents, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
-    const handleMenuClose = (name?: string) => {
-        if (name) setSelectedAgentName(name);
-        setAnchorEl(null);
-    };
+  // Keep the selected agent in sync with live data (avoid JSON.stringify — key order breaks updates)
+  useEffect(() => {
+    if (!selectedAgent) return;
+    const updated = agents.find(a => a.id === selectedAgent.id);
+    if (!updated) return;
+    if (
+      updated.feed !== selectedAgent.feed ||
+      updated.performance !== selectedAgent.performance ||
+      updated.sentiment !== selectedAgent.sentiment ||
+      updated.status !== selectedAgent.status ||
+      updated.name !== selectedAgent.name
+    ) {
+      setSelectedAgent(updated);
+    }
+  }, [agents, selectedAgent]);
 
-    return (
-        <Box sx={{ p: 4, animation: 'fadeIn 0.5s' }}>
-            <Typography variant="h3" align="center" sx={{ fontWeight: 900, mb: 6, color: '#1e293b' }}>
-                Voice Agent
-            </Typography>
+  const totalActive = agents.filter(a => a.status !== 'idle').length;
+  const perfValues = agents
+    .map(a => parseInt(a.performance, 10))
+    .filter(n => !Number.isNaN(n));
+  const avgPerf = perfValues.length
+    ? Math.round(perfValues.reduce((acc, n) => acc + n, 0) / perfValues.length)
+    : 0;
 
-            {/* Agents Cards */}
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 3, mb: 4 }}>
-                {agents.map((agent) => (
-                    <Box key={agent.id} sx={{
-                        bgcolor: 'white',
-                        border: '1px solid #ccfbf1',
-                        borderRadius: 3,
-                        p: 3,
-                        boxShadow: 3,
-                        width: { xs: '100%', md: 'calc(50% - 24px)', lg: 'calc(33.333% - 24px)' },
-                        transition: '0.3s',
-                        '&:hover': { transform: 'translateY(-4px)' }
-                    }}>
-                        <Typography variant="h4" align="center" sx={{ color: '#64748b', fontWeight: 'bold', mb: 3 }}>
-                            {agent.name}
-                        </Typography>
+  return (
+    <div style={{ padding: 32, backgroundColor: 'var(--bg)', minHeight: '100vh' }}>
+      <h1 className="text-center text-5xl font-black mb-2" style={{ color: 'var(--text-main)', letterSpacing: '-0.03em', textShadow: '0 2px 8px rgba(33,52,72,0.10)' }}>
+        Voice Agents
+      </h1>
+      <p className="text-center mb-10" style={{ color: 'var(--text-secondary)', fontSize: '1.05rem' }}>
+        Select an agent to view details and monitor live activity
+      </p>
 
-                        <Box sx={{ mb: 3, color: '#1e293b', fontSize: '1.1rem' }}>
-                            <Typography><Box component="span" sx={{ fontWeight: 'bold', color: '#6b7280' }}>Status:</Box> <Box component="span" sx={{ color: agent.status === 'active' ? '#10b981' : '#f59e0b', fontWeight: 600 }}>{agent.status}</Box></Typography>
-                            <Typography><Box component="span" sx={{ fontWeight: 'bold', color: '#6b7280' }}>Sentiment:</Box> {agent.sentiment}</Typography>
-                            <Typography><Box component="span" sx={{ fontWeight: 'bold', color: '#6b7280' }}>Performance:</Box> {agent.performance}</Typography>
-                        </Box>
+      <Box sx={{ display: 'flex', gap: 3, justifyContent: 'center', mb: 5, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Total Agents', value: agents.length, color: 'var(--text-main)' },
+          { label: 'In Call Now', value: totalActive, color: 'var(--success)' },
+          { label: 'Avg Performance', value: avgPerf ? `${avgPerf}%` : '—', color: 'var(--accent-hex)' },
+        ].map((stat, idx) => (
+          <Box
+            key={stat.label}
+            sx={{
+              minWidth: 180,
+              opacity: 0,
+              animation: `staggerFadeIn 0.5s cubic-bezier(0.4,0,0.2,1) ${idx * 0.1}s forwards`,
+              '@keyframes staggerFadeIn': {
+                '0%': { opacity: 0, transform: 'translateY(24px)' },
+                '100%': { opacity: 1, transform: 'translateY(0)' },
+              },
+            }}
+          >
+            <Card sx={glassCardSx}>
+              <Typography variant="caption" fontWeight={600} color="var(--text-muted)" sx={{ textTransform: 'uppercase', letterSpacing: '0.08em', mb: 1, display: 'block' }}>{stat.label}</Typography>
+              <Typography variant="h4" fontWeight={900} sx={{ color: stat.color }}>{stat.value}</Typography>
+            </Card>
+          </Box>
+        ))}
+      </Box>
 
-                        <Box sx={{ bgcolor: '#f0fdfa', p: 2, borderRadius: 3, fontStyle: 'italic', border: '1px solid #ccfbf1', minHeight: 80, display: 'flex', alignItems: 'center', mb: 3 }}>
-                            "{agent.feed}"
-                        </Box>
+      <div className="voice-agents-container">
+        <div className="voice-agents-grid">
+          {loading && agents.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)', textAlign: 'center', width: '100%' }}>
+              Loading agents…
+            </p>
+          ) : agents.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)', textAlign: 'center', width: '100%' }}>
+              No voice agents configured yet.
+            </p>
+          ) : (
+            agents.map((agent, index) => (
+              <VoiceAgentCard
+                key={agent.id}
+                agent={agent}
+                index={index}
+                isSelected={selectedAgent?.id === agent.id}
+                onClick={(a) => setSelectedAgent(a)}
+              />
+            ))
+          )}
+        </div>
+      </div>
 
-                        <Box sx={{ display: 'flex', gap: 2 }}>
-                            <Button variant="outlined" fullWidth sx={{ borderRadius: 3, py: 1, fontWeight: 600, color: '#64748b', borderColor: '#ccfbf1' }} startIcon={<VisibilityIcon />}>
-                                Monitor Live
-                            </Button>
-                            <Button variant="contained" fullWidth sx={{ borderRadius: 3, py: 1, fontWeight: 600, bgcolor: '#0d9488', '&:hover': { bgcolor: '#0f766e' } }} startIcon={<MicIcon />}>
-                                Listen In
-                            </Button>
-                        </Box>
-                    </Box>
-                ))}
-            </Box>
+      <AgentDetailModal agent={selectedAgent} onClose={() => setSelectedAgent(null)} />
 
-            {/* Control Box - Keeping similar to Chat for functionality consistency */}
-            <Box sx={{
-                bgcolor: 'white',
-                border: '1px solid #ccfbf1',
-                borderRadius: 3,
-                px: 5, py: 4,
-                boxShadow: 3,
-                mt: 6,
-                maxWidth: 1000,
-                mx: 'auto',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center'
-            }}>
-
-                {/* Dropdown */}
-                <Box sx={{ mb: 4, width: '100%', display: 'flex', justifyContent: 'center' }}>
-                    <Button
-                        onClick={handleMenuClick}
-                        endIcon={Boolean(anchorEl) ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                        sx={{ fontSize: '1.8rem', fontWeight: 900, color: '#0d9488', textTransform: 'none' }}
-                    >
-                        {selectedAgentName}
-                    </Button>
-                    <Menu
-                        anchorEl={anchorEl}
-                        open={Boolean(anchorEl)}
-                        onClose={() => handleMenuClose()}
-                        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-                        transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-                        PaperProps={{ sx: { borderRadius: 3, border: '2px solid #ccfbf1', minWidth: 200 } }}
-                    >
-                        {agents.map((agent) => (
-                            <MenuItem key={agent.id} onClick={() => handleMenuClose(agent.name)} sx={{ fontSize: '1.2rem', color: '#0d9488', fontWeight: 'bold', justifyContent: 'center', py: 2 }}>
-                                {agent.name}
-                            </MenuItem>
-                        ))}
-                    </Menu>
-                </Box>
-
-                {/* Input & Action */}
-                <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 2, width: '100%' }}>
-                    <TextField
-                        fullWidth
-                        placeholder={`Enter whisper for ${selectedAgentName}...`}
-                        variant="outlined"
-                        sx={{
-                            bgcolor: '#f0fdfa',
-                            '& .MuiOutlinedInput-root': { borderRadius: 3, '& fieldset': { borderColor: '#ccfbf1' } }
-                        }}
-                    />
-                    <Button
-                        variant="contained"
-                        size="large"
-                        sx={{
-                            borderRadius: 3,
-                            px: 6,
-                            bgcolor: '#0d9488',
-                            fontWeight: 900,
-                            fontSize: '1.1rem',
-                            '&:hover': { bgcolor: '#0b7a70' }
-                        }}
-                        startIcon={<MicIcon />}
-                    >
-                        Whisper
-                    </Button>
-                </Box>
-            </Box>
-        </Box>
-    );
+      <InjectBox agents={agents} label="inject" />
+    </div>
+  );
 };
 
 export default VoiceAgentMonitoring;

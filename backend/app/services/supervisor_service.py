@@ -21,6 +21,10 @@ def get_supervisor_dashboard(supervisor_id: UUID) -> dict:
     if supervisor is None:
         raise NotFoundException("Supervisor not found")
 
+    # So mock-phone / POST interactions only route to this supervisor's idle agents
+    # while they have the app open (dashboard polling).
+    supervisor_repository.touch_monitoring_presence(supervisor_id)
+
     # Get aggregated dashboard data efficiently
     enriched_agents = supervisor_repository.get_dashboard_data(supervisor_id)
 
@@ -116,15 +120,19 @@ def create_supervisor(data: SupervisorCreate) -> dict:
 
     # Create auth user via Supabase Admin API
     try:
-        auth_user = supabase_admin.auth.admin.create_user({
+        user_attributes = {
             "email": data.email,
             "password": data.password,
             "email_confirm": True,
-        })
+        }
+        if data.name:
+            user_attributes["user_metadata"] = {"name": data.name}
+            
+        auth_user = supabase_admin.auth.admin.create_user(user_attributes)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to create auth user: {str(e)}",
+            detail="An internal error occurred while creating the auth user.",
         )
 
     if not auth_user or not auth_user.user:
@@ -139,6 +147,7 @@ def create_supervisor(data: SupervisorCreate) -> dict:
         .insert({
             "userID": str(auth_user.user.id),
             "supervisor_type": data.supervisor_type.value,
+            "name": data.name or "",
         })
         .execute()
     )
@@ -167,6 +176,17 @@ def update_supervisor(supervisor_id: UUID, data: SupervisorUpdate) -> dict:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No fields to update",
         )
+
+    # Synchronize name with Auth user metadata if provided
+    if "name" in payload:
+        try:
+            supabase_admin = get_supabase_service_client()
+            supabase_admin.auth.admin.update_user_by_id(
+                str(supervisor_id), 
+                {"user_metadata": {"name": payload["name"]}}
+            )
+        except Exception:
+            pass  # best-effort sync for auth display
 
     # Convert enum values to strings for Supabase
     if "supervisor_type" in payload:

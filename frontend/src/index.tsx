@@ -1,9 +1,20 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
+import '@fontsource/inter/300.css';
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/inter/700.css';
+import '@fontsource/manrope/400.css';
+import '@fontsource/manrope/500.css';
+import '@fontsource/manrope/600.css';
+import '@fontsource/manrope/700.css';
+import '@fontsource/cairo/400.css';
+import '@fontsource/cairo/600.css';
+import '@fontsource/cairo/700.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
-import ErrorBoundary from './components/ErrorBoundary';
 import '@fontsource/manrope/300.css';
 import '@fontsource/manrope/400.css';
 import '@fontsource/manrope/500.css';
@@ -14,16 +25,14 @@ import '@fontsource/cairo/400.css';
 import '@fontsource/cairo/600.css';
 import '@fontsource/cairo/700.css';
 
-const rootElement = document.getElementById('root');
-if (!rootElement) {
-  throw new Error('Root element not found');
-}
-
-const root = ReactDOM.createRoot(rootElement);
+import './index.css';
+const root = ReactDOM.createRoot(
+  document.getElementById('root') as HTMLElement
+);
 root.render(
-  <ErrorBoundary>
+  <React.StrictMode>
     <App />
-  </ErrorBoundary>
+  </React.StrictMode>
 );
 
 // If you want to start measuring performance in your app, pass a function

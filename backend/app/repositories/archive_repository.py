@@ -4,6 +4,27 @@ from uuid import UUID
 from datetime import datetime
 from supabase import Client
 
+
+def _merge_interaction_and_archive_row(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Flatten PostgREST embed ``archive`` (1:1 on ``interaction_id``) onto the interaction row."""
+    out = {k: v for k, v in item.items() if k != "archive"}
+    arc = item.get("archive")
+    if isinstance(arc, list):
+        arc = arc[0] if arc else None
+    if isinstance(arc, dict):
+        out["summary"] = arc.get("summary") or out.get("summary")
+        op = arc.get("overall_performance")
+        if op is not None:
+            try:
+                out["overall_performance"] = float(op)
+                out["csat_score"] = float(op)
+            except (TypeError, ValueError):
+                pass
+        if arc.get("sentiment") is not None:
+            out["sentiment"] = arc.get("sentiment")
+    return out
+
+
 class ArchiveRepository:
     def __init__(self, supabase: Client):
         self.supabase = supabase
@@ -25,7 +46,9 @@ class ArchiveRepository:
         """
         # Query interactions table with completed status (archives = completed interactions)
         # JOIN with agents to get agent_name
-        query = self.supabase.table("interactions").select("*, agents(name)", count="exact")
+        query = self.supabase.table("interactions").select(
+            "*, agents(name), archive(*)", count="exact"
+        )
         query = query.eq("status", "completed")
 
         # Security boundary: only allow user's agents
@@ -59,9 +82,10 @@ class ArchiveRepository:
         
         # Map response to Schema format
         mapped_data = []
-        for item in response.data:
+        for raw in response.data:
+            item = _merge_interaction_and_archive_row(raw)
             # Schema expects: interaction_id, agent_name, type (from interaction_type)
-            
+
             # Map Agent Name
             agent_name = "Unknown"
             if item.get("agents"):
@@ -70,21 +94,33 @@ class ArchiveRepository:
             # Map Interaction Type
             i_type = item.get("interaction_type", "voice") # Default or map?
             
-            # Helper to safely parse tags if string or dict
+            # Helper to safely parse tags if string, list, or dict
             i_tags = item.get("tags") or []
-            if isinstance(i_tags, str):
+            if isinstance(i_tags, list):
+                i_tags = [str(x) for x in i_tags]
+            elif isinstance(i_tags, str):
                  # if stored as string "tag1,tag2"
                  i_tags = i_tags.split(",")
             elif isinstance(i_tags, dict):
                  # if stored as dict {"topic": "x"} -> ["topic:x"]
                  i_tags = [f"{k}:{v}" for k, v in i_tags.items()]
-            
+
+            duration_seconds = item.get("duration_seconds")
+            if duration_seconds is None and item.get("started_at") and item.get("end_at"):
+                try:
+                    s = datetime.fromisoformat(str(item["started_at"]).replace("Z", "+00:00"))
+                    e = datetime.fromisoformat(str(item["end_at"]).replace("Z", "+00:00"))
+                    duration_seconds = int((e - s).total_seconds())
+                except Exception:
+                    duration_seconds = None
+
             mapped_item = {
                 **item,
                 "interaction_id": item["id"], # Alias id to interaction_id
                 "agent_name": agent_name,
                 "type": i_type,
-                "tags": i_tags
+                "tags": i_tags,
+                "duration_seconds": duration_seconds,
             }
             mapped_data.append(mapped_item)
         
@@ -98,7 +134,7 @@ class ArchiveRepository:
     def get_archive_detail(self, interaction_id: UUID, agent_ids: Optional[List[str]]) -> Optional[Dict[str, Any]]:
         """Get detailed view of a specific archive (completed interaction)."""
         query = self.supabase.table("interactions")\
-            .select("*, agents(name)")\
+            .select("*, agents(name), archive(*)")\
             .eq("id", str(interaction_id))\
             .eq("status", "completed")
             
@@ -111,8 +147,8 @@ class ArchiveRepository:
         if not response.data:
             return None
             
-        item = response.data[0]
-        
+        item = _merge_interaction_and_archive_row(response.data[0])
+
         # Map fields similarly to get_archives
         agent_name = "Unknown"
         if item.get("agents"):
@@ -121,11 +157,22 @@ class ArchiveRepository:
         i_type = item.get("interaction_type", "voice")
         
         i_tags = item.get("tags") or []
-        if isinstance(i_tags, str):
+        if isinstance(i_tags, list):
+            i_tags = [str(x) for x in i_tags]
+        elif isinstance(i_tags, str):
              i_tags = i_tags.split(",")
         elif isinstance(i_tags, dict):
              i_tags = [f"{k}:{v}" for k, v in i_tags.items()]
-             
+
+        duration_seconds = item.get("duration_seconds")
+        if duration_seconds is None and item.get("started_at") and item.get("end_at"):
+            try:
+                s = datetime.fromisoformat(str(item["started_at"]).replace("Z", "+00:00"))
+                e = datetime.fromisoformat(str(item["end_at"]).replace("Z", "+00:00"))
+                duration_seconds = int((e - s).total_seconds())
+            except Exception:
+                duration_seconds = None
+
         mapped_item = {
             **item,
             "interaction_id": item["id"],
@@ -134,6 +181,7 @@ class ArchiveRepository:
             "tags": i_tags,
             "issues": item.get("issues") or [],
             "ended_at": item.get("end_at"),
+            "duration_seconds": duration_seconds,
         }
             
         return mapped_item

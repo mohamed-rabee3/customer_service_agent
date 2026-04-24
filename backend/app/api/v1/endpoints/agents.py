@@ -1,9 +1,9 @@
 """Agent endpoints - Router layer for agent API."""
 
-from typing import Annotated
+from typing import Annotated, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.api.v1.schemas.agent import (
     AgentCreateResponse,
@@ -21,6 +21,30 @@ from app.services import agent_service
 router = APIRouter(prefix="/agents", tags=["Agents"])
 
 
+@router.get(
+    "",
+    response_model=list[AgentResponse],
+    summary="List agents",
+    description="List all agents for the current supervisor. Admins see all agents. Optionally filter by type.",
+)
+async def list_agents(
+    current_user: Annotated[UserResponse, Depends(get_current_user)],
+    agent_type: Optional[str] = Query(None, description="Filter by agent type: 'voice' or 'chat'"),
+) -> list[AgentResponse]:
+    """
+    List all agents belonging to the current supervisor.
+
+    Raises:
+        401: Not authenticated
+    """
+    agents = agent_service.list_agents(
+        supervisor_id=current_user.id,
+        role=current_user.role,
+        agent_type=agent_type,
+    )
+    return [AgentResponse.model_validate(a.model_dump()) for a in agents]
+
+
 @router.post(
     "",
     response_model=AgentCreateResponse,
@@ -34,20 +58,30 @@ async def create_agent(
 ) -> AgentCreateResponse:
     """
     Create a new AI agent for the current supervisor.
+    
+    If a Telegram token is provided, the webhook will be automatically configured.
 
     Raises:
         400: Maximum 3 agents allowed per supervisor
         401: Not authenticated
     """
     agent_type = AgentType.VOICE
-    if hasattr(current_user.profile, "supervisor_type"):
+    if request.agent_type:
+        agent_type = AgentType(request.agent_type)
+    elif hasattr(current_user.profile, "supervisor_type"):
         agent_type = AgentType(current_user.profile.supervisor_type.value)
 
-    created_agent = agent_service.create_agent(
+    created_agent, webhook_set = await agent_service.create_agent_with_telegram_webhook(
         supervisor_id=current_user.id,
         request=request,
         agent_type=agent_type,
     )
+    
+    # Log the webhook setup status
+    if request.telegram_bot_token and webhook_set:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"✅ Agent {created_agent.id} created with Telegram token and webhook auto-configured")
 
     return AgentCreateResponse.model_validate(created_agent.model_dump())
 
@@ -117,6 +151,8 @@ async def update_agent(
 ) -> AgentResponse:
     """
     Update an agent's configuration (partial update).
+    
+    If a Telegram token is provided, the webhook will be automatically configured.
 
     Raises:
         401: Not authenticated
@@ -124,13 +160,21 @@ async def update_agent(
         404: Agent not found
         409: Cannot update agent while in active call/chat
     """
-    updated_agent = agent_service.update_agent(
+    updated_agent, webhook_set = await agent_service.update_agent_with_telegram_webhook(
         agent_id=agent_id,
         supervisor_id=current_user.id,
         request=request,
     )
-
-    return AgentResponse.model_validate(updated_agent.model_dump())
+    
+    response = AgentResponse.model_validate(updated_agent.model_dump())
+    
+    # Log the webhook setup status
+    if request.telegram_bot_token and webhook_set:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"✅ Agent {agent_id} updated with Telegram token and webhook auto-configured")
+    
+    return response
 
 
 @router.delete(

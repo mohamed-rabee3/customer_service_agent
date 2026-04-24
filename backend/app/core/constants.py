@@ -7,6 +7,10 @@ from enum import Enum
 MAX_AGENTS_PER_SUPERVISOR = 3
 MAX_SUPERVISORS_ON_DASHBOARD = 15
 
+# Mock phone / inbound routing: only assign agents whose supervisor has polled
+# the dashboard recently (see supervisor_service.get_supervisor_dashboard).
+SUPERVISOR_MONITORING_PRESENCE_TTL_SECONDS = 90
+
 # Sentiment Values
 class Sentiment(str, Enum):
     """Sentiment analysis values."""

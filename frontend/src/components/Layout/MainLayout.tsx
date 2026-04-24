@@ -1,49 +1,75 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Box } from '@mui/material';
 import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
+import { useAuth } from '../../context/AuthContext';
 
 const MainLayout: React.FC = () => {
-    const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [isLoggingOut, setIsLoggingOut] = useState(false);
     const navigate = useNavigate();
+    const { logout } = useAuth();
 
-    const handleLogout = () => {
-        // Perform logout logic here (clear tokens, etc.)
-        console.log('Logging out...');
-        navigate('/login');
-    };
+    const handleLogout = useCallback(() => {
+        // Start fade-out animation
+        setIsLoggingOut(true);
+        
+        // Wait for animation, then logout and navigate
+        setTimeout(() => {
+            logout();
+            navigate('/login');
+        }, 400);
+    }, [logout, navigate]);
 
     return (
-        <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'var(--bg)' }}>
-            {/* Sidebar (Left Side) - Moved before content for LTR */}
-            <Box sx={{
-                width: isSidebarOpen ? '260px' : '0px',
-                flexShrink: 0,
-                transition: 'width 0.3s ease',
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                borderRight: isSidebarOpen ? '1px solid #ccfbf1' : 'none', // Changed border-left to border-right
-                // Sticky Positioning
-                position: 'sticky',
-                top: 0,
-                height: '100vh',
-                zIndex: 1200 // Ensure it stays above content if needed, though TopBar is fixed
-            }}>
-                <Sidebar onLogout={handleLogout} />
-            </Box>
+        <>
+            {/* Logout fade overlay */}
+            <Box
+                sx={{
+                    position: 'fixed',
+                    inset: 0,
+                    bgcolor: 'var(--bg)',
+                    zIndex: 9999,
+                    opacity: isLoggingOut ? 1 : 0,
+                    visibility: isLoggingOut ? 'visible' : 'hidden',
+                    transition: 'opacity 0.4s ease-out, visibility 0.4s ease-out',
+                    pointerEvents: isLoggingOut ? 'all' : 'none',
+                }}
+            />
 
-            {/* Main Content Area */}
-            <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-                {/* TopBar */}
-                <TopBar isOpen={isSidebarOpen} onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
+            <Box 
+                sx={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    minHeight: '100vh', 
+                    bgcolor: 'var(--bg)',
+                    opacity: isLoggingOut ? 0 : 1,
+                    transition: 'opacity 0.3s ease-out',
+                }}
+            >
+                <Sidebar
+                    isOpen={isSidebarOpen}
+                    onClose={() => setIsSidebarOpen(false)}
+                    onLogout={handleLogout}
+                />
 
-                {/* Page Content */}
-                <Box sx={{ mt: '60px', p: 3, overflow: 'auto', flexGrow: 1 }}>
+                <TopBar
+                    onToggleSidebar={() => setIsSidebarOpen(true)}
+                />
+
+                <Box 
+                    sx={{ 
+                        mt: '60px', 
+                        p: { xs: 2, sm: 3 }, 
+                        overflow: 'auto', 
+                        flexGrow: 1,
+                    }}
+                >
                     <Outlet />
                 </Box>
             </Box>
-        </Box>
+        </>
     );
 };
 

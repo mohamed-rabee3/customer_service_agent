@@ -1,146 +1,306 @@
-import React, { useState } from 'react';
-import { Box, Typography, Button, TextField, Menu, MenuItem, InputAdornment } from '@mui/material';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import ChatIcon from '@mui/icons-material/Chat';
-import SendIcon from '@mui/icons-material/Send';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Box, Card, Typography } from '@mui/material';
+import ChatAgentCard from '@/components/agents/ChatAgentCard';
+import ChatDetailModal from '@/components/agents/ChatDetailModal';
+import InjectBox from '@/components/agents/InjectBox';
+import '@/components/agents/VoiceAgentSelector.css';
+import { agentsAPI } from '@/services/agentsService';
+import { chatAPI } from '@/services/chatService';
+import { toast } from 'react-toastify';
+import DeleteConfirmModal from '@/components/modals/DeleteConfirmModal';
+import AgentFormModal from '@/components/agents/AgentFormModal';
+import AddAgentCard from '@/components/agents/AddAgentCard';
 
-// Adapted to MUI since Tailwind is likely not configured in frontendD
+interface ChatAgent {
+    id: string;
+    name: string;
+    status: 'active' | 'idle' | 'paused';
+    sentiment: string;
+    performance: string;
+    feed: string;
+    session_id?: string;
+    system_prompt?: string;
+    telegram_bot_token?: string;
+}
+
+/* Glassmorphism card — same DNA as AdminDashboard */
+const glassCardSx = {
+    textAlign: 'center' as const,
+    p: 3,
+    borderRadius: 'var(--radius-lg)',
+    background: 'var(--glass-bg)',
+    backdropFilter: 'blur(var(--glass-blur))',
+    WebkitBackdropFilter: 'blur(var(--glass-blur))',
+    border: '1px solid var(--glass-border)',
+    boxShadow: 'var(--shadow-md), inset 0 1px 0 rgba(255,255,255,0.2)',
+    transition: 'transform 0.4s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.4s ease, border-color 0.4s ease',
+    '&:hover': {
+        transform: 'translateY(-8px)',
+        boxShadow: 'var(--shadow-lg), 0 0 24px rgba(84,119,146,0.18)',
+        borderColor: 'var(--accent-hex)',
+    },
+};
 
 const ChatMonitoring: React.FC = () => {
-    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-    const [selectedAgentName, setSelectedAgentName] = useState('Agent-1');
+    const [selectedAgent, setSelectedAgent] = useState<ChatAgent | null>(null);
+    const [agents, setAgents] = useState<ChatAgent[]>([]);
 
-    const [agents] = useState([
-        { id: 1, name: 'Agent-1', status: 'active', sentiment: 'good', performance: '80%', feed: 'Customer asked about pricing.' },
-        { id: 2, name: 'Agent-2', status: 'active', sentiment: 'neutral', performance: '85%', feed: 'Explaining the subscription plan.' },
-        { id: 3, name: 'Agent-3', status: 'active', sentiment: 'good', performance: '80%', feed: 'Helping with password reset.' },
-    ]);
+    // Config states
+    const [saving, setSaving] = useState(false);
+    const [addModalOpen, setAddModalOpen] = useState(false);
+    const [editModalOpen, setEditModalOpen] = useState(false);
+    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [configTarget, setConfigTarget] = useState<ChatAgent | null>(null);
+    const [formData, setFormData] = useState<{ 
+        name: string; 
+        system_prompt: string; 
+        telegram_bot_token?: string; 
+        agent_type?: 'voice' | 'chat';
+        webhook_configs: Record<string, any>;
+    }>({ 
+        name: '', system_prompt: '', telegram_bot_token: '', agent_type: 'chat', webhook_configs: {} 
+    });
 
-    const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => {
-        setAnchorEl(event.currentTarget);
+    const resetForm = () => setFormData({ name: '', system_prompt: '', telegram_bot_token: '', agent_type: 'chat', webhook_configs: {} });
+
+    const fetchAgents = useCallback(async () => {
+        try {
+            // 1. Fetch chat agents from backend
+            const agentsRes = await agentsAPI.getAll('chat');
+            const rawAgents = agentsRes.data || [];
+
+            // 2. Fetch active sessions to get live metrics
+            let activeSessions: any[] = [];
+            try {
+                const sessionsRes = await chatAPI.getActiveSessions();
+                activeSessions = sessionsRes.data || [];
+            } catch { /* no active sessions */ }
+
+            // 3. Build session lookup: agent_id → session data
+            const sessionMap = new Map<string, any>();
+            for (const s of activeSessions) {
+                sessionMap.set(s.agent_id, s);
+            }
+
+            // 4. Map to ChatAgent interface
+            const mapped: ChatAgent[] = rawAgents.map((a: any) => {
+                const session = sessionMap.get(a.id);
+                const isActive = a.status === 'in_chat';
+                const derivedStatus = a.status === 'paused' ? 'paused' : (isActive ? 'active' : 'idle');
+                return {
+                    id: a.id,
+                    name: a.name,
+                    status: derivedStatus,
+                    sentiment: 'neutral',
+                    performance: '-',
+                    feed: session ? `${session.message_count} messages` : 'No active session',
+                    session_id: session?.session_id,
+                    system_prompt: a.system_prompt,
+                    telegram_bot_token: a.telegram_bot_token,
+                };
+            });
+
+            setAgents(mapped);
+        } catch (err) {
+            console.error('Failed to fetch chat agents', err);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchAgents();
+        const interval = setInterval(fetchAgents, 10000); // refresh every 10s
+        return () => clearInterval(interval);
+    }, [fetchAgents]);
+
+    // Handlers for Add/Edit/Delete
+    const handleAddSubmit = async () => {
+        if (!formData.name.trim()) { toast.warn('Please enter a name'); return; }
+        if (!formData.system_prompt.trim()) { toast.warn('Please enter a system prompt'); return; }
+        setSaving(true);
+        try {
+            await agentsAPI.create({
+                ...formData,
+                agent_type: 'chat'
+            });
+            toast.success('Agent created successfully');
+            setAddModalOpen(false);
+            resetForm();
+            fetchAgents();
+        } catch (err: any) {
+            toast.error(err?.response?.data?.detail || 'Failed to create agent');
+        } finally {
+            setSaving(false);
+        }
     };
 
-    const handleMenuClose = (name?: string) => {
-        if (name) setSelectedAgentName(name);
-        setAnchorEl(null);
+    const handleEditClick = async (agent: ChatAgent) => {
+        setConfigTarget(agent);
+        try {
+            const res = await agentsAPI.getById(agent.id);
+            setFormData({
+                name: res.data.name,
+                system_prompt: res.data.system_prompt || '',
+                telegram_bot_token: res.data.telegram_bot_token || '',
+                agent_type: 'chat',
+                webhook_configs: res.data.webhook_configs || {}
+            });
+        } catch {
+            setFormData({
+                name: agent.name,
+                system_prompt: agent.system_prompt || '',
+                telegram_bot_token: agent.telegram_bot_token || '',
+                agent_type: 'chat',
+                webhook_configs: (agent as any).webhook_configs || {}
+            });
+        }
+        setEditModalOpen(true);
     };
+
+    const handleEditSubmit = async () => {
+        if (!configTarget) return;
+        if (!formData.name.trim()) { toast.warn('Please enter a name'); return; }
+        if (!formData.system_prompt.trim()) { toast.warn('Please enter a system prompt'); return; }
+        setSaving(true);
+        try {
+            await agentsAPI.update(configTarget.id, {
+                ...formData,
+                agent_type: 'chat'
+            });
+            toast.success('Agent updated successfully');
+            setEditModalOpen(false);
+            setConfigTarget(null);
+            resetForm();
+            fetchAgents();
+        } catch (err: any) {
+            toast.error(err?.response?.data?.detail || 'Failed to update agent');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleDeleteClick = (agent: ChatAgent) => {
+        setConfigTarget(agent);
+        setDeleteModalOpen(true);
+    };
+
+    const handleDeleteConfirm = async () => {
+        if (!configTarget) return;
+        setSaving(true);
+        try {
+            await agentsAPI.delete(configTarget.id);
+            toast.success('Agent deleted');
+            setDeleteModalOpen(false);
+            setConfigTarget(null);
+            fetchAgents();
+        } catch (err: any) {
+            toast.error(err?.response?.data?.detail || 'Failed to delete agent');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleToggleStatus = async (agent: ChatAgent) => {
+        const newStatus = agent.status === 'paused' ? 'idle' : 'paused';
+        try {
+            await agentsAPI.update(agent.id, { status: newStatus });
+            toast.success(`Agent ${newStatus === 'paused' ? 'turned off' : 'turned on'}`);
+            fetchAgents();
+        } catch (err: any) {
+            toast.error('Failed to change agent status');
+        }
+    };
+
+    const totalActive = agents.filter(a => a.status === 'active').length;
+    const avgPerf = agents.length > 0 ? Math.round(agents.reduce((acc, a) => acc + (parseInt(a.performance) || 0), 0) / agents.length) : 0;
 
     return (
-        <Box sx={{ p: 4, animation: 'fadeIn 0.5s' }}>
-            <Typography variant="h3" align="center" sx={{ fontWeight: 900, mb: 6, color: '#1e293b' }}>
-                Chat Agent
-            </Typography>
+        <div style={{ padding: 32, backgroundColor: 'var(--bg)', minHeight: '100vh' }}>
+            <h1 className="text-center text-5xl font-black mb-2" style={{ color: 'var(--text-main)', letterSpacing: '-0.03em', textShadow: '0 2px 8px rgba(33,52,72,0.10)' }}>
+                Chat Agents
+            </h1>
+            <p className="text-center mb-10" style={{ color: 'var(--text-secondary)', fontSize: '1.05rem' }}>
+                Select an agent to view details and monitor live chat activity
+            </p>
 
-            {/* Agents Cards */}
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 3, mb: 4 }}>
-                {agents.map((agent) => (
-                    <Box key={agent.id} sx={{
-                        bgcolor: 'white',
-                        border: '1px solid #ccfbf1',
-                        borderRadius: 3,
-                        p: 3,
-                        boxShadow: 3,
-                        width: { xs: '100%', md: 'calc(50% - 24px)', lg: 'calc(33.333% - 24px)' },
-                        transition: '0.3s',
-                        '&:hover': { transform: 'translateY(-4px)' }
-                    }}>
-                        <Typography variant="h4" align="center" sx={{ color: '#64748b', fontWeight: 'bold', mb: 3 }}>
-                            {agent.name}
-                        </Typography>
-
-                        <Box sx={{ mb: 3, color: '#1e293b', fontSize: '1.1rem' }}>
-                            <Typography><Box component="span" sx={{ fontWeight: 'bold', color: '#6b7280' }}>Status:</Box> <Box component="span" sx={{ color: '#10b981', fontWeight: 600 }}>{agent.status}</Box></Typography>
-                            <Typography><Box component="span" sx={{ fontWeight: 'bold', color: '#6b7280' }}>Sentiment:</Box> {agent.sentiment}</Typography>
-                            <Typography><Box component="span" sx={{ fontWeight: 'bold', color: '#6b7280' }}>Performance:</Box> {agent.performance}</Typography>
-                        </Box>
-
-                        <Box sx={{ bgcolor: '#f0fdfa', p: 2, borderRadius: 3, fontStyle: 'italic', border: '1px solid #ccfbf1', minHeight: 80, display: 'flex', alignItems: 'center', mb: 3 }}>
-                            "{agent.feed}"
-                        </Box>
-
-                        <Box sx={{ display: 'flex', gap: 2 }}>
-                            <Button variant="outlined" fullWidth sx={{ borderRadius: 3, py: 1, fontWeight: 600, color: '#64748b', borderColor: '#ccfbf1' }} startIcon={<VisibilityIcon />}>
-                                Monitor
-                            </Button>
-                            <Button variant="contained" fullWidth sx={{ borderRadius: 3, py: 1, fontWeight: 600, bgcolor: '#0d9488', '&:hover': { bgcolor: '#0f766e' } }} startIcon={<ChatIcon />}>
-                                Join Chat
-                            </Button>
-                        </Box>
+            {/* Glassmorphism stat cards — same DNA as admin */}
+            <Box sx={{ display: 'flex', gap: 3, justifyContent: 'center', mb: 5, flexWrap: 'wrap' }}>
+                {[
+                    { label: 'Total Agents', value: agents.length, color: 'var(--text-main)' },
+                    { label: 'Active Now', value: totalActive, color: 'var(--success)' },
+                    { label: 'Avg Performance', value: `${avgPerf}%`, color: 'var(--accent-hex)' },
+                ].map((stat, idx) => (
+                    <Box
+                        key={stat.label}
+                        sx={{
+                            minWidth: 180,
+                            opacity: 0,
+                            animation: `staggerFadeIn 0.5s cubic-bezier(0.4,0,0.2,1) ${idx * 0.1}s forwards`,
+                            '@keyframes staggerFadeIn': {
+                                '0%': { opacity: 0, transform: 'translateY(24px)' },
+                                '100%': { opacity: 1, transform: 'translateY(0)' },
+                            },
+                        }}
+                    >
+                        <Card sx={glassCardSx}>
+                            <Typography variant="caption" fontWeight={600} color="var(--text-muted)" sx={{ textTransform: 'uppercase', letterSpacing: '0.08em', mb: 1, display: 'block' }}>{stat.label}</Typography>
+                            <Typography variant="h4" fontWeight={900} sx={{ color: stat.color }}>{stat.value}</Typography>
+                        </Card>
                     </Box>
                 ))}
             </Box>
 
-            {/* Control Box */}
-            <Box sx={{
-                bgcolor: 'white',
-                border: '1px solid #ccfbf1',
-                borderRadius: 3,
-                px: 5, py: 4,
-                boxShadow: 3,
-                mt: 6,
-                maxWidth: 1000,
-                mx: 'auto',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center'
-            }}>
+            <div className="voice-agents-container">
+                <div className="voice-agents-grid">
+                    {agents.map((agent, index) => (
+                        <ChatAgentCard
+                            key={agent.id}
+                            agent={agent}
+                            index={index}
+                            isSelected={selectedAgent?.id === agent.id}
+                            onClick={(a) => setSelectedAgent(a)}
+                            onEdit={handleEditClick}
+                            onDelete={handleDeleteClick}
+                            onToggleStatus={handleToggleStatus}
+                        />
+                    ))}
+                    <AddAgentCard index={agents.length} onClick={() => { resetForm(); setAddModalOpen(true); }} />
+                </div>
+            </div>
 
-                {/* Dropdown */}
-                <Box sx={{ mb: 4, width: '100%', display: 'flex', justifyContent: 'center' }}>
-                    <Button
-                        onClick={handleMenuClick}
-                        endIcon={Boolean(anchorEl) ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                        sx={{ fontSize: '1.8rem', fontWeight: 900, color: '#0d9488', textTransform: 'none' }}
-                    >
-                        {selectedAgentName}
-                    </Button>
-                    <Menu
-                        anchorEl={anchorEl}
-                        open={Boolean(anchorEl)}
-                        onClose={() => handleMenuClose()}
-                        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-                        transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-                        PaperProps={{ sx: { borderRadius: 3, border: '2px solid #ccfbf1', minWidth: 200 } }}
-                    >
-                        {agents.map((agent) => (
-                            <MenuItem key={agent.id} onClick={() => handleMenuClose(agent.name)} sx={{ fontSize: '1.2rem', color: '#0d9488', fontWeight: 'bold', justifyContent: 'center', py: 2 }}>
-                                {agent.name}
-                            </MenuItem>
-                        ))}
-                    </Menu>
-                </Box>
+            <ChatDetailModal agent={selectedAgent} onClose={() => setSelectedAgent(null)} />
 
-                {/* Input & Action */}
-                <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 2, width: '100%' }}>
-                    <TextField
-                        fullWidth
-                        placeholder={`Enter command for ${selectedAgentName}...`}
-                        variant="outlined"
-                        sx={{
-                            bgcolor: '#f0fdfa',
-                            '& .MuiOutlinedInput-root': { borderRadius: 3, '& fieldset': { borderColor: '#ccfbf1' } }
-                        }}
-                    />
-                    <Button
-                        variant="contained"
-                        size="large"
-                        sx={{
-                            borderRadius: 3,
-                            px: 6,
-                            bgcolor: '#0d9488',
-                            fontWeight: 900,
-                            fontSize: '1.1rem',
-                            '&:hover': { bgcolor: '#0b7a70' }
-                        }}
-                        startIcon={<SendIcon />}
-                    >
-                        Inject
-                    </Button>
-                </Box>
-            </Box>
-        </Box>
+            {/* Configuration Modals */}
+            <AgentFormModal
+                open={addModalOpen}
+                title="Add Voice/Chat Agent"
+                formData={formData}
+                onChange={setFormData as any}
+                onSubmit={handleAddSubmit}
+                onClose={() => setAddModalOpen(false)}
+                submitLabel="Add Agent"
+                loading={saving}
+            />
+            <AgentFormModal
+                open={editModalOpen}
+                title="Edit Agent"
+                formData={formData}
+                onChange={setFormData as any}
+                onSubmit={handleEditSubmit}
+                onClose={() => { setEditModalOpen(false); setConfigTarget(null); }}
+                submitLabel="Save Changes"
+                loading={saving}
+                existingAgentId={configTarget?.id}
+            />
+            <DeleteConfirmModal
+                open={deleteModalOpen}
+                onClose={() => { setDeleteModalOpen(false); setConfigTarget(null); }}
+                onConfirm={handleDeleteConfirm}
+                itemName={configTarget?.name || ''}
+                isDeleting={saving}
+            />
+
+            <InjectBox agents={agents} label="inject" />
+        </div>
     );
 };
 

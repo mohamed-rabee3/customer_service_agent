@@ -58,10 +58,11 @@ async def get_current_user(
             detail="Missing authentication token",
         )
 
-    supabase: Client = get_supabase_client()
-
+    # 1. Verify token validity via Supabase Auth (using unauthenticated client for basic check)
     try:
-        response = supabase.auth.get_user(token)
+        # We fetch the client here BEFORE setting JWT just to verify the token itself
+        auth_client = get_supabase_client()
+        response = auth_client.auth.get_user(token)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -79,8 +80,13 @@ async def get_current_user(
     user_uuid = UUID(user_id_str)
     display_name = _extract_display_name(getattr(user_data, "user_metadata", None), user_data.email or "")
 
-    # Set user's JWT for RLS enforcement on subsequent queries
-    supabase.postgrest.auth(token)
+    # 2. Authenticate the user safely in the request context variable
+    # This MUST happen before fetching the client used for RLS-protected queries
+    from app.db.supabase import request_jwt
+    request_jwt.set(token)
+
+    # 3. Get an AUTHENTICATED client that respects RLS (userID = auth.uid())
+    supabase: Client = get_supabase_client()
 
     # Check admin role (RLS: admin can see their own row)
     admin_result = (

@@ -1,5 +1,5 @@
 // src/pages/admin/AdminArchive.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -16,16 +16,17 @@ import {
   MenuItem,
   IconButton,
   Stack,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogContentText,
-  DialogActions,
   Button,
+  Drawer,
+  Divider,
+  Chip,
 } from '@mui/material';
 import Icon from '../../components/Icon';
 import SupervisorFormModal from '../../components/modals/SupervisorFormModal';
+import DeleteConfirmModal from '../../components/modals/DeleteConfirmModal';
+import { X, Clock, Phone, CheckCircle, AlertTriangle } from 'lucide-react';
 import { supervisorsAPI } from '../../services/supervisorsService';
+import { analyticsAPI } from '../../services/analyticsService';
 
 import {
   faInfoCircle,
@@ -33,28 +34,103 @@ import {
   faTrash,
   faSearch,
   faFilter,
+  faPlus,
 } from '@fortawesome/free-solid-svg-icons';
 
-// Mock data (later from API)
-const initialArchiveData = [
-  { id: 1, name: 'Ahmed Mohamed', type: 'Voice', interventions: 145, performance: 92, avgTime: '4:32', failed: 8 },
-  { id: 2, name: 'Sara Ahmed', type: 'Chat', interventions: 132, performance: 90, avgTime: '3:45', failed: 5 },
-  { id: 3, name: 'Khaled Hassan', type: 'Voice', interventions: 128, performance: 88, avgTime: '5:10', failed: 12 },
-  { id: 4, name: 'Layla Mahmoud', type: 'Chat', interventions: 115, performance: 87, avgTime: '4:00', failed: 7 },
-  { id: 5, name: 'Yousef Ibrahim', type: 'Voice', interventions: 110, performance: 85, avgTime: '5:25', failed: 15 },
-  { id: 6, name: 'Noor Al Emarat', type: 'Voice', interventions: 105, performance: 89, avgTime: '4:50', failed: 9 },
-  { id: 7, name: 'Fatma Ali', type: 'Chat', interventions: 98, performance: 91, avgTime: '3:30', failed: 4 },
-  { id: 8, name: 'Mohamed Khaled', type: 'Chat', interventions: 92, performance: 86, avgTime: '4:15', failed: 10 },
-];
+interface Supervisor {
+  id: string;
+  name: string;
+  email: string;
+  type: 'Voice' | 'Chat';
+  status: 'Active' | 'Inactive';
+  interventions: number;
+  performance: number;
+  avgTime: string;
+  failed: number;
+}
+
+function formatAvgHandleSeconds(sec: number | undefined | null): string {
+  if (sec == null || Number.isNaN(Number(sec)) || sec <= 0) return '—';
+  const s = Math.floor(Number(sec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, '0')}`;
+}
+
+/* Spring row animation keyframes injected via sx */
+const springRowSx = (idx: number) => ({
+  opacity: 0,
+  animation: `springSlideIn 0.6s cubic-bezier(0.34,1.56,0.64,1) ${idx * 0.06}s forwards`,
+  '@keyframes springSlideIn': {
+    '0%': { opacity: 0, transform: 'translateY(20px) scale(0.97)' },
+    '60%': { opacity: 1, transform: 'translateY(-4px) scale(1.005)' },
+    '100%': { opacity: 1, transform: 'translateY(0) scale(1)' },
+  },
+});
 
 const AdminArchive: React.FC = () => {
-  const [archiveData, setArchiveData] = useState(initialArchiveData);
+  const [archiveData, setArchiveData] = useState<Supervisor[]>([]);
+  const [loadingData, setLoadingData] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [addModalOpen, setAddModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [selectedSupervisor, setSelectedSupervisor] = useState<any>(null);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [supervisorToDelete, setSupervisorToDelete] = useState<any>(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [selectedSupervisor, setSelectedSupervisor] = useState<Supervisor | null>(null);
+
+  /* Drawer state */
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerSupervisor, setDrawerSupervisor] = useState<Supervisor | null>(null);
+
+  /* Animate key to retrigger spring on filter change */
+  const [animKey, setAnimKey] = useState(0);
+
+  // Fetch supervisors from API
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const res = await supervisorsAPI.getAll();
+        const sups = res.data.supervisors || res.data.items || res.data || [];
+        const rawSups = Array.isArray(sups) ? sups : [];
+        
+        const mappedData: Supervisor[] = [];
+        for (const s of rawSups) {
+          let interventions = 0;
+          let performance = 0;
+          let avgTime = '—';
+          try {
+            const statRes = await analyticsAPI.getBySupervisor(s.id);
+            if (statRes.data) {
+                interventions = statRes.data.total_interactions ?? 0;
+                performance = Math.round(statRes.data.performance_score ?? 0);
+                avgTime = formatAvgHandleSeconds(statRes.data.avg_handle_time);
+            }
+          } catch (e) {
+             console.error("Failed to load analytics for supervisor", s.id);
+          }
+          
+          mappedData.push({
+            id: s.id,
+            name: s.email || 'Supervisor',
+            email: s.email || '',
+            type: s.supervisor_type === 'voice' ? 'Voice' : 'Chat',
+            status: 'Active',
+            interventions: interventions,
+            performance: performance,
+            avgTime,
+            failed: 0,
+          });
+        }
+        
+        setArchiveData(mappedData);
+      } catch (err) {
+        console.error('Failed to fetch supervisors', err);
+      } finally {
+        setLoadingData(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   const filteredData = archiveData.filter((row) => {
     const matchesSearch = row.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -62,239 +138,235 @@ const AdminArchive: React.FC = () => {
     return matchesSearch && matchesType;
   });
 
-  const handleEdit = (sup: any) => {
-    setSelectedSupervisor({
-      id: sup.id,
-      name: sup.name,
-      type: sup.type.toLowerCase() as 'voice' | 'chat',
-      email: 'example@email.com',
-    });
-    setEditModalOpen(true);
-  };
+  /* Retrigger spring animation on filter changes */
+  useEffect(() => {
+    setAnimKey(k => k + 1);
+  }, [searchTerm, typeFilter]);
 
-  const handleDeleteClick = (sup: any) => {
-    setSupervisorToDelete(sup);
-    setDeleteDialogOpen(true);
-  };
 
-  const handleDeleteConfirm = async () => {
-    if (!supervisorToDelete?.id) return;
-
+  const handleAddSubmit = async (data: { name: string; type: 'voice' | 'chat'; email: string }) => {
     try {
-      await supervisorsAPI.delete(supervisorToDelete.id);
-      console.log('Supervisor Deleted:', supervisorToDelete.id);
-      alert('Supervisor deleted successfully!');
-      setArchiveData(prev => prev.filter(item => item.id !== supervisorToDelete.id));
-    } catch (error) {
-      console.error('Error deleting supervisor:', error);
-      alert('Failed to delete supervisor. Please try again.');
+      const res = await supervisorsAPI.create({ email: data.email, password: 'TempPass123!', supervisor_type: data.type });
+      const newSup = res.data;
+      const newSupervisor: Supervisor = {
+        id: newSup.id, name: data.name || data.email, email: data.email,
+        type: data.type === 'voice' ? 'Voice' : 'Chat',
+        status: 'Active', interventions: 0, performance: 0, avgTime: '0:00', failed: 0,
+      };
+      setArchiveData(prev => [...prev, newSupervisor]);
+    } catch (err) {
+      console.error('Failed to create supervisor', err);
     }
-    setDeleteDialogOpen(false);
-    setSupervisorToDelete(null);
+    setAddModalOpen(false);
   };
 
-  const handleEditSubmit = async (data: any) => {
-    if (!selectedSupervisor?.id) return;
+  const handleEditClick = (sup: Supervisor) => { setSelectedSupervisor(sup); setEditModalOpen(true); };
+  const handleEditSubmit = (data: { name: string; type: 'voice' | 'chat'; email: string }) => {
+    if (!selectedSupervisor) return;
+    setArchiveData(prev => prev.map(item =>
+      item.id === selectedSupervisor.id
+        ? { ...item, name: data.name, email: data.email, type: data.type === 'voice' ? 'Voice' : 'Chat' }
+        : item
+    ));
+    setEditModalOpen(false);
+    setSelectedSupervisor(null);
+  };
 
-    try {
-      const response = await supervisorsAPI.update(selectedSupervisor.id, data);
-      console.log('Supervisor Updated:', response.data);
-      alert('Supervisor updated successfully!');
-      setArchiveData(prev => prev.map(item =>
-        item.id === selectedSupervisor.id ? { ...item, ...data } : item
-      ));
-    } catch (error) {
-      console.error('Error updating supervisor:', error);
-      alert('Failed to update supervisor. Please try again.');
-    }
+  const handleDeleteClick = (sup: Supervisor) => { setSelectedSupervisor(sup); setDeleteModalOpen(true); };
+  const handleDeleteConfirm = () => {
+    if (!selectedSupervisor) return;
+    setArchiveData(prev => prev.filter(item => item.id !== selectedSupervisor.id));
+    setDeleteModalOpen(false);
+    setSelectedSupervisor(null);
+  };
+
+  const openDrawer = (sup: Supervisor) => {
+    setDrawerSupervisor(sup);
+    setDrawerOpen(true);
   };
 
   return (
     <Box sx={{ p: { xs: 2, md: 4 }, direction: 'ltr', bgcolor: 'var(--bg)', minHeight: '100vh' }}>
-      {/* Headline بسيط على الشمال – بدون الـ teal header */}
-      <Typography
-        variant="h4"
-        fontWeight={900}
-        color="var(--text-main)"
-        sx={{ mb: 6 }}
-      >
-        Admin Archive
-      </Typography>
+      {/* Header */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 6 }}>
+        <Typography variant="h4" fontWeight={900} color="var(--text-main)">Admin Archive</Typography>
+        <Button
+          variant="contained"
+          startIcon={<Icon icon={faPlus} />}
+          onClick={() => setAddModalOpen(true)}
+          sx={{ bgcolor: 'var(--accent)', color: '#fff', px: 3, py: 1.5, borderRadius: 'var(--radius-pill)', textTransform: 'none', fontWeight: 600, '&:hover': { bgcolor: 'var(--accent-hover)' } }}
+        >
+          Add Supervisor
+        </Button>
+      </Box>
 
-      {/* Main Content */}
-      <Box>
-        {/* Search Bar - Pill Style */}
-        <Paper sx={{ p: 3, mb: 4, borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)' }}>
-          <Stack
-            direction={{ xs: 'column', sm: 'row' }}
-            spacing={2}
-            alignItems="center"
-            sx={{ flexWrap: 'wrap' }}
-          >
-            {/* Search Input with icon inside */}
-            <Box sx={{ position: 'relative', flex: 1, minWidth: { xs: '100%', sm: 300 } }}>
-              <TextField
-                fullWidth
-                placeholder="Search by supervisor name..."
-                variant="outlined"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                sx={{
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: 'var(--radius-pill)',
-                    pr: 2,
-                    pl: 5,
-                    height: 56,
-                  },
-                  '& .MuiOutlinedInput-input': {
-                    py: 2,
-                  },
-                }}
-              />
-              <Icon
-                icon={faSearch}
-                size="lg"
-                color="var(--text-secondary)"
-                style={{
-                  position: 'absolute',
-                  left: 20,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  pointerEvents: 'none',
-                }}
-              />
-            </Box>
-
-            {/* Type Filter */}
-            <FormControl sx={{ minWidth: { xs: '100%', sm: 200 } }}>
+      {/* Filter Bar */}
+      <Paper className="filter-bar-container" sx={{ p: 3, mb: 4, borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', bgcolor: 'var(--surface)' }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ xs: 'stretch', md: 'center' }}>
+          <Box sx={{ position: 'relative', flex: 1, width: '100%' }}>
+            <TextField
+              className="filter-input"
+              fullWidth
+              placeholder="Search by supervisor name..."
+              variant="outlined"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 'var(--radius-pill)', pr: 2, pl: 5, height: 56, bgcolor: 'var(--input-bg)' }, '& .MuiOutlinedInput-input': { py: 2, color: 'var(--text-main)' } }}
+            />
+            <Icon icon={faSearch} size="lg" color="var(--text-secondary)" style={{ position: 'absolute', left: 20, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+          </Box>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ width: { xs: '100%', md: 'auto' } }}>
+            <FormControl className="filter-select" sx={{ width: { xs: '100%', sm: 200 } }}>
               <Select
                 value={typeFilter}
                 onChange={(e) => setTypeFilter(e.target.value as string)}
                 displayEmpty
-                sx={{
-                  borderRadius: 'var(--radius-pill)',
-                  height: 56,
-                  '& .MuiOutlinedInput-input': {
-                    py: 2,
-                  },
-                }}
+                sx={{ borderRadius: 'var(--radius-pill)', height: 56, bgcolor: 'var(--input-bg)', '& .MuiOutlinedInput-input': { py: 2, color: 'var(--text-main)' } }}
+                MenuProps={{ PaperProps: { sx: { bgcolor: 'var(--surface)', color: 'var(--text-main)', boxShadow: 'var(--shadow-lg)', zIndex: 9999, '& .MuiMenuItem-root': { color: 'var(--text-main)', '&:hover': { bgcolor: 'rgba(148,180,193,0.2)' }, '&.Mui-selected': { bgcolor: 'rgba(148,180,193,0.3)' } } } } }}
               >
                 <MenuItem value="all">All Types</MenuItem>
                 <MenuItem value="voice">Voice</MenuItem>
                 <MenuItem value="chat">Chat</MenuItem>
               </Select>
             </FormControl>
-
-            {/* Filter Button */}
-            <Button
-              variant="outlined"
-              startIcon={<Icon icon={faFilter} />}
-              sx={{
-                height: 56,
-                px: 4,
-                borderRadius: 'var(--radius-pill)',
-                textTransform: 'none',
-                fontWeight: 600,
-              }}
-            >
+            <Button className="filter-button" variant="outlined" startIcon={<Icon icon={faFilter} />} sx={{ height: 56, px: 4, borderRadius: 'var(--radius-pill)', textTransform: 'none', fontWeight: 600, width: { xs: '100%', sm: 'auto' }, borderColor: 'var(--border)', color: 'var(--text-main)', bgcolor: 'var(--input-bg)', '&:hover': { borderColor: 'var(--primary)', bgcolor: 'rgba(33,52,72,0.05)' } }}>
               Filter
             </Button>
           </Stack>
-        </Paper>
+        </Stack>
+      </Paper>
 
-        {/* Archive Table */}
-        <TableContainer
-          component={Paper}
-          sx={{
-            borderRadius: 'var(--radius-lg)',
-            border: '1px solid var(--border)',
-            boxShadow: 'var(--shadow-md)',
-          }}
-        >
-          <Table>
-            <TableHead>
-              <TableRow sx={{ bgcolor: 'var(--bg)' }}>
-                <TableCell>Supervisor Name</TableCell>
-                <TableCell>Type</TableCell>
-                <TableCell>Total Interventions</TableCell>
-                <TableCell>Performance</TableCell>
-                <TableCell>Avg Handle Time</TableCell>
-                <TableCell>Failed</TableCell>
-                <TableCell align="center">Options</TableCell>
+      {/* Archive Table with Spring Rows */}
+      <TableContainer component={Paper} sx={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)' }}>
+        <Table>
+          <TableHead>
+            <TableRow sx={{ bgcolor: 'var(--bg)' }}>
+              <TableCell>Supervisor Name</TableCell>
+              <TableCell>Email</TableCell>
+              <TableCell>Type</TableCell>
+              <TableCell>Status</TableCell>
+              <TableCell>Total Interventions</TableCell>
+              <TableCell>Performance</TableCell>
+              <TableCell align="center">Options</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {filteredData.map((row, idx) => (
+              <TableRow
+                key={`${animKey}-${row.id}`}
+                hover
+                onClick={() => openDrawer(row)}
+                sx={{
+                  cursor: 'pointer',
+                  '&:hover': { bgcolor: 'rgba(84,119,146,0.08)' },
+                  ...springRowSx(idx),
+                }}
+              >
+                <TableCell sx={{ fontWeight: 600 }}>{row.name}</TableCell>
+                <TableCell>{row.email}</TableCell>
+                <TableCell>{row.type}</TableCell>
+                <TableCell>
+                  <Box sx={{ display: 'inline-block', px: 2, py: 0.5, borderRadius: 'var(--radius-pill)', bgcolor: row.status === 'Active' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', color: row.status === 'Active' ? '#22c55e' : 'var(--danger)', fontWeight: 600, fontSize: '0.875rem' }}>
+                    {row.status}
+                  </Box>
+                </TableCell>
+                <TableCell>{row.interventions}</TableCell>
+                <TableCell sx={{ color: 'var(--accent)', fontWeight: 600 }}>{row.performance}%</TableCell>
+                <TableCell align="center" onClick={(e) => e.stopPropagation()}>
+                  <IconButton color="secondary" title="Quick View" onClick={(e) => { e.stopPropagation(); openDrawer(row); }}>
+                    <Icon icon={faInfoCircle} />
+                  </IconButton>
+                  <IconButton sx={{ color: 'var(--accent)' }} title="Edit" onClick={(e) => { e.stopPropagation(); handleEditClick(row); }}>
+                    <Icon icon={faEdit} />
+                  </IconButton>
+                  <IconButton color="error" title="Delete" onClick={(e) => { e.stopPropagation(); handleDeleteClick(row); }}>
+                    <Icon icon={faTrash} />
+                  </IconButton>
+                </TableCell>
               </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredData.map((row) => (
-                <TableRow key={row.id} hover>
-                  <TableCell sx={{ fontWeight: 600 }}>{row.name}</TableCell>
-                  <TableCell>{row.type}</TableCell>
-                  <TableCell>{row.interventions}</TableCell>
-                  <TableCell sx={{ color: 'var(--success)', fontWeight: 600 }}>
-                    {row.performance}%
-                  </TableCell>
-                  <TableCell>{row.avgTime}</TableCell>
-                  <TableCell sx={{ color: 'var(--danger)' }}>{row.failed}</TableCell>
-                  <TableCell align="center">
-                    {/* Info زر مربوط دلوقتي */}
-                    <IconButton 
-                      color="secondary" 
-                      title="Info"
-                      onClick={() => {
-                        alert(
-                          `Supervisor Info:\n\n` +
-                          `Name: ${row.name}\n` +
-                          `Type: ${row.type}\n` +
-                          `Total Interventions: ${row.interventions}\n` +
-                          `Performance: ${row.performance}%\n` +
-                          `Avg Handle Time: ${row.avgTime}\n` +
-                          `Failed: ${row.failed}`
-                        );
-                      }}
-                    >
-                      <Icon icon={faInfoCircle} />
-                    </IconButton>
+            ))}
+            {filteredData.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={7} align="center" sx={{ py: 4, color: 'var(--text-secondary)' }}>No supervisors found</TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
 
-                    <IconButton color="success" title="Edit" onClick={() => handleEdit(row)}>
-                      <Icon icon={faEdit} />
-                    </IconButton>
+      {/* ═══ Slide-over Drawer (Quick View Panel) ═══ */}
+      <Drawer
+        anchor="right"
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        PaperProps={{
+          sx: {
+            width: { xs: '100%', sm: 460 },
+            bgcolor: 'var(--bg)',
+            borderLeft: '1px solid var(--border)',
+            boxShadow: '-8px 0 40px rgba(33,52,72,0.12)',
+            p: 0,
+          },
+        }}
+      >
+        {drawerSupervisor && (
+          <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+            {/* Drawer Header */}
+            <Box sx={{ p: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
+              <Typography variant="h6" fontWeight={700} color="var(--text-main)">Quick View</Typography>
+              <IconButton onClick={() => setDrawerOpen(false)} size="small">
+                <X size={20} />
+              </IconButton>
+            </Box>
 
-                    <IconButton color="error" title="Delete" onClick={() => handleDeleteClick(row)}>
-                      <Icon icon={faTrash} />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+            <Box sx={{ flex: 1, overflowY: 'auto', p: 3 }}>
+              {/* Profile Summary */}
+              <Box sx={{ mb: 4 }}>
+                <Typography variant="h5" fontWeight={800} color="var(--text-main)" sx={{ mb: 0.5 }}>{drawerSupervisor.name}</Typography>
+                <Typography variant="body2" color="var(--text-secondary)">{drawerSupervisor.email}</Typography>
+                <Stack direction="row" spacing={1} sx={{ mt: 1.5 }}>
+                  <Chip label={drawerSupervisor.type} size="small" sx={{ bgcolor: 'rgba(84,119,146,0.1)', color: 'var(--accent-hex)', fontWeight: 600 }} />
+                  <Chip label={drawerSupervisor.status} size="small" sx={{ bgcolor: drawerSupervisor.status === 'Active' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', color: drawerSupervisor.status === 'Active' ? '#22c55e' : 'var(--danger)', fontWeight: 600 }} />
+                </Stack>
+              </Box>
 
-        {/* Edit Modal */}
-        <SupervisorFormModal
-          open={editModalOpen}
-          onClose={() => {
-            setEditModalOpen(false);
-            setSelectedSupervisor(null);
-          }}
-          supervisor={selectedSupervisor}
-          onSubmit={handleEditSubmit}
-        />
+              {/* High-Contrast Stat Labels */}
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 4 }}>
+                {[
+                  { icon: <CheckCircle size={18} />, label: 'Performance', value: `${drawerSupervisor.performance}%`, color: 'var(--accent-hex)' },
+                  { icon: <Clock size={18} />, label: 'Avg Time', value: drawerSupervisor.avgTime, color: 'var(--text-main)' },
+                  { icon: <Phone size={18} />, label: 'Interventions', value: String(drawerSupervisor.interventions), color: 'var(--text-main)' },
+                  { icon: <AlertTriangle size={18} />, label: 'Failed', value: String(drawerSupervisor.failed), color: 'var(--danger)' },
+                ].map((stat) => (
+                  <Box key={stat.label} sx={{ p: 2, borderRadius: 'var(--radius-md)', bgcolor: 'var(--surface)', border: '1px solid var(--border)' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5, color: 'var(--text-secondary)' }}>
+                      {stat.icon}
+                      <Typography variant="caption" fontWeight={600} sx={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>{stat.label}</Typography>
+                    </Box>
+                    <Typography variant="h5" fontWeight={800} sx={{ color: stat.color }}>{stat.value}</Typography>
+                  </Box>
+                ))}
+              </Box>
 
-        {/* Delete Confirmation Dialog */}
-        <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
-          <DialogTitle>Confirm Delete</DialogTitle>
-          <DialogContent>
-            <DialogContentText>
-              Are you sure you want to delete supervisor "{supervisorToDelete?.name}"?
-            </DialogContentText>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleDeleteConfirm} color="error" variant="contained">
-              Delete
-            </Button>
-          </DialogActions>
-        </Dialog>
-      </Box>
+              <Divider sx={{ my: 3 }} />
+
+              <Typography variant="body2" color="var(--text-secondary)" sx={{ lineHeight: 1.65 }}>
+                Per-call transcripts, timelines, and recordings are shown in the supervisor archive and monitoring views.
+              </Typography>
+            </Box>
+          </Box>
+        )}
+      </Drawer>
+
+      {/* Modals */}
+      <SupervisorFormModal open={addModalOpen} onClose={() => setAddModalOpen(false)} supervisor={null} onSubmit={handleAddSubmit} />
+      <SupervisorFormModal
+        open={editModalOpen}
+        onClose={() => { setEditModalOpen(false); setSelectedSupervisor(null); }}
+        supervisor={selectedSupervisor ? { id: selectedSupervisor.id, name: selectedSupervisor.name, type: selectedSupervisor.type.toLowerCase() as 'voice' | 'chat', email: selectedSupervisor.email } : null}
+        onSubmit={handleEditSubmit}
+      />
+      <DeleteConfirmModal open={deleteModalOpen} onClose={() => { setDeleteModalOpen(false); setSelectedSupervisor(null); }} onConfirm={handleDeleteConfirm} itemName={selectedSupervisor?.name || ''} />
     </Box>
   );
 };

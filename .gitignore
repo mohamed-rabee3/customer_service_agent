@@ -71,6 +71,9 @@ backend/.env.local
 # Documentation
 /docs
 
-# Node.js
-node_modules/
-**/node_modules/
+# Python Linters & Type Checking Cache
+.ruff_cache/
+.mypy_cache/
+
+# Auto-generated Orchestration Scripts
+backend/update_webhook_final.py
