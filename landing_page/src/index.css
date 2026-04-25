@@ -1,0 +1,179 @@
+@import "tailwindcss";
+
+body {
+  overflow-x: hidden;
+  background-color: #fafcff;
+}
+
+/* Animated Mesh Gradient Background */
+.mesh-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background-color: #ffffff;
+  opacity: 0.8;
+}
+
+.glow-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  z-index: 0;
+  animation: floatOrb 20s infinite linear;
+}
+
+.orb-1 {
+  width: 800px;
+  height: 800px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, rgba(255,255,255,0) 60%);
+  top: -20%;
+  left: -10%;
+  animation-duration: 25s;
+}
+
+.orb-2 {
+  width: 900px;
+  height: 900px;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.1) 0%, rgba(255,255,255,0) 60%);
+  bottom: -20%;
+  right: -10%;
+  animation-duration: 30s;
+  animation-direction: reverse;
+}
+
+.orb-3 {
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.08) 0%, rgba(255,255,255,0) 60%);
+  top: 40%;
+  left: 30%;
+  animation-duration: 20s;
+}
+
+@keyframes floatOrb {
+  0% { transform: rotate(0deg) translate(50px) rotate(0deg) scale(1); }
+  50% { transform: rotate(180deg) translate(100px) rotate(-180deg) scale(1.1); }
+  100% { transform: rotate(360deg) translate(50px) rotate(-360deg) scale(1); }
+}
+
+/* Dashboard Preview - Light Mode */
+.dashboard-preview {
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 20px;
+  border: 1px solid rgba(226, 232, 240, 1);
+  box-shadow: 0 30px 60px -12px rgba(15, 23, 42, 0.1), 0 0 0 1px rgba(0,0,0,0.02);
+  overflow: hidden;
+  transform: rotateX(5deg) scale(0.95);
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.6s ease;
+  backdrop-filter: blur(24px);
+}
+
+.dashboard-preview-container:hover .dashboard-preview {
+  transform: rotateX(0deg) scale(1) translateY(-15px);
+  box-shadow: 0 40px 80px -12px rgba(59, 130, 246, 0.15), 0 0 0 1px rgba(0,0,0,0.02);
+}
+
+.pulse-line {
+  height: 4px;
+  width: 100%;
+  background: linear-gradient(90deg, #3b82f6, #10b981, #8b5cf6, #3b82f6);
+  background-size: 300% 100%;
+  border-radius: 2px;
+  opacity: 0.9;
+  animation: gradientPan 4s linear infinite;
+}
+
+@keyframes gradientPan {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 100% 50%; }
+}
+
+/* Background grid pattern - Animated Pan */
+.bg-grid-pattern {
+  background-size: 50px 50px;
+  background-image: linear-gradient(to right, rgba(15, 23, 42, 0.04) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(15, 23, 42, 0.04) 1px, transparent 1px);
+  mask-image: radial-gradient(circle at center, black 10%, transparent 70%);
+  -webkit-mask-image: radial-gradient(circle at center, black 10%, transparent 70%);
+  animation: gridPan 30s linear infinite;
+}
+
+@keyframes gridPan {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(50px); }
+}
+
+/* Floating Glass Shapes - High Contrast */
+.glass-shape {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0.3) 100%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 1);
+  box-shadow: 0 10px 40px rgba(15, 23, 42, 0.06), inset 0 0 0 1px rgba(255,255,255,0.5);
+  position: absolute;
+  z-index: 1;
+}
+
+/* Text Gradient Wave */
+.text-gradient-wave {
+  background: linear-gradient(
+    to right,
+    #1d4ed8, #7e22ce, #0891b2, #1d4ed8, #7e22ce, #0891b2, #1d4ed8
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: textWaveFlow 8s linear infinite;
+}
+
+@keyframes textWaveFlow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: -100% 50%; }
+}
+
+@keyframes gradientPulse {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Background grid pattern - Light */
+.bg-grid-pattern {
+  background-size: 40px 40px;
+  background-image: linear-gradient(to right, rgba(33, 52, 72, 0.05) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(33, 52, 72, 0.05) 1px, transparent 1px);
+  mask-image: radial-gradient(circle at center, black, transparent 80%);
+  -webkit-mask-image: radial-gradient(circle at center, black, transparent 80%);
+}
+
+/* Floating Glass Shapes - Light */
+.glass-shape {
+  background: rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+  position: absolute;
+  z-index: 1;
+}
+
+.glass-pill {
+  width: 120px;
+  height: 40px;
+  border-radius: 20px;
+}
+
+.glass-circle {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+}
+
+.glass-card {
+  width: 150px;
+  height: 150px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.1) 100%);
+}
