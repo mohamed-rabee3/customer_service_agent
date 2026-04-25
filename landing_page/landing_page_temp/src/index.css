@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+:root {
+  /* Primary Colors - Navy Blue (Modern Tech) */
+  --primary: 211 36% 21%;
+  --primary-dark: 211 42% 10%;
+  --primary-light: 206 28% 45%;
+  --primary-hex: #213448;
+  
+  /* Accent Colors - Light Blue */
+  --accent: 206 28% 45%;
+  --accent-light: 198 24% 66%;
+  --accent-hex: #547792;
+  
+  /* Background Colors - Clean White */
+  --bg: #ffffff;
+  --bg-dark: #f8fafc;
+  --surface: #ffffff;
+  
+  /* Text Colors */
+  --text-main: #213448;
+  --text-secondary: #547792;
+  --text-muted: #94B4C1;
+  --text-inverse: #ffffff;
+  
+  /* Border & UI */
+  --border: #e2e8f0;
+  
+  /* Contextual Action Colors */
+  --action-primary: #4f6ef7;
+  --action-primary-bg: rgba(79, 110, 247, 0.1);
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(33, 52, 72, 0.04);
+  --shadow-md: 0 4px 12px rgba(33, 52, 72, 0.08);
+  --shadow-lg: 0 12px 32px rgba(33, 52, 72, 0.12);
+  
+  /* Typography */
+  --font-family: 'Inter', 'Manrope', 'Cairo', sans-serif;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-family);
+  background-color: var(--bg);
+  color: var(--text-main);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Animations */
+@keyframes float {
+  0% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-20px) scale(1.05); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(79, 110, 247, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(79, 110, 247, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(79, 110, 247, 0); }
+}
+
+.glow-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.4;
+  animation: float 10s infinite ease-in-out alternate;
+}
+
+.orb-1 {
+  width: 500px;
+  height: 500px;
+  background: rgba(79, 110, 247, 0.3);
+  top: -100px;
+  left: -100px;
+}
+
+.orb-2 {
+  width: 400px;
+  height: 400px;
+  background: rgba(52, 211, 153, 0.2);
+  bottom: 20%;
+  right: -50px;
+  animation-delay: -5s;
+}
+
+.dashboard-preview {
+  background: var(--surface);
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg), 0 20px 40px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  transform: rotateX(5deg) scale(0.95);
+  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.dashboard-preview-container:hover .dashboard-preview {
+  transform: rotateX(0deg) scale(1);
+}
+
+.pulse-line {
+  height: 4px;
+  width: 100%;
+  background: linear-gradient(90deg, #4f6ef7, #10b981);
+  border-radius: 2px;
+  opacity: 0.5;
+}
