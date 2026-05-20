@@ -278,8 +278,10 @@ const AgentConfiguration: React.FC = () => {
                 })));
             }
         } catch (err: unknown) {
-            console.error('Failed to fetch agents', err);
-            toast.error('Failed to load agents');
+            if ((err as any)?.response?.status !== 401) {
+                console.error('Failed to fetch agents', err);
+                toast.error('Failed to load agents');
+            }
         } finally {
             setLoading(false);
         }

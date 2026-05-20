@@ -28,6 +28,7 @@ import DeleteConfirmModal from '../../components/modals/DeleteConfirmModal';
 import { useAuth } from '../../context/AuthContext';
 import { supervisorsAPI } from '../../services/supervisorsService';
 import { adminAPI } from '../../services/adminService';
+import { analyticsAPI, type AdminAnalyticsData } from '../../services/analyticsService';
 
 import {
   faUser,
@@ -164,6 +165,9 @@ const AdminDashboard: React.FC = () => {
   const [activeSup, setActiveSup] = useState<ActiveSupervisor | null>(null);
   const [activeSupModalOpen, setActiveSupModalOpen] = useState(false);
 
+  // Admin analytics KPI state
+  const [adminKpis, setAdminKpis] = useState<AdminAnalyticsData | null>(null);
+
   // Carousel scroll
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -181,6 +185,7 @@ const AdminDashboard: React.FC = () => {
     const fetchData = async () => {
       try {
         if (isAdmin) {
+          // Fetch supervisors list
           const res = await supervisorsAPI.getAll();
           const sups = res.data.supervisors || res.data.items || res.data || [];
           const mapped: ActiveSupervisor[] = (Array.isArray(sups) ? sups : []).map((s: Record<string, any>) => ({
@@ -202,6 +207,29 @@ const AdminDashboard: React.FC = () => {
             performance: 0,
             avgTime: '0:00',
           })));
+
+          // Fetch admin KPI overview
+          try {
+            const kpiRes = await analyticsAPI.getAdminOverview('month');
+            setAdminKpis(kpiRes.data);
+            // Enrich leaderboard with real data from supervisor breakdown
+            if (kpiRes.data.supervisors_breakdown) {
+              const breakdownMap = new Map(kpiRes.data.supervisors_breakdown.map(sb => [sb.supervisor_id, sb]));
+              setLeaderBoard(prev => prev.map((row, idx) => {
+                const sb = breakdownMap.get(row.id);
+                if (sb) {
+                  return {
+                    ...row,
+                    totalCalls: sb.total_interactions,
+                    performance: Math.round(sb.performance_score),
+                  };
+                }
+                return row;
+              }).sort((a, b) => b.performance - a.performance).map((s, idx) => ({ ...s, rank: idx + 1 })));
+            }
+          } catch (kpiErr) {
+            console.warn('Failed to fetch admin KPIs', kpiErr);
+          }
         } else {
           // Supervisor sees their own agents
           try {
@@ -342,13 +370,28 @@ const AdminDashboard: React.FC = () => {
         display: 'grid',
         gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' },
         gap: 2.5,
-        mb: 5,
+        mb: 3,
       }}>
-        <StatCard label="Active Now" value={totalActive} delay={0} color="var(--success)" />
-        <StatCard label="Total Today" value={totalToday} delay={0.1} />
-        <StatCard label="Avg Performance" value={avgPerf} suffix="%" delay={0.2} color="var(--accent-hex)" />
-        <StatCard label="Failed" value={totalFailed} delay={0.3} color="var(--danger)" />
+        <StatCard label="Total Interactions" value={adminKpis?.total_interactions ?? totalToday} delay={0} />
+        <StatCard label="Avg CSAT" value={Math.round(adminKpis?.overall_csat ?? 0)} suffix="%" delay={0.1} color="var(--success)" />
+        <StatCard label="FCR Rate" value={Math.round(adminKpis?.avg_fcr ?? 0)} suffix="%" delay={0.2} color="var(--accent-hex)" />
+        <StatCard label="Containment" value={Math.round(adminKpis?.containment_rate ?? 0)} suffix="%" delay={0.3} color="var(--success)" />
       </Box>
+
+      {/* ═══ Secondary KPI Row ═══ */}
+      {adminKpis && (
+        <Box sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' },
+          gap: 2.5,
+          mb: 5,
+        }}>
+          <StatCard label="Voice Calls" value={adminKpis.total_voice_interactions} delay={0.4} />
+          <StatCard label="Chat Sessions" value={adminKpis.total_chat_interactions} delay={0.5} />
+          <StatCard label="Avg Performance" value={Math.round(adminKpis.performance_score)} suffix="%" delay={0.6} color="var(--accent-hex)" />
+          <StatCard label="Active Now" value={totalActive} delay={0.7} color="var(--success)" />
+        </Box>
+      )}
 
       {/* ═══ Active Supervisors - Carousel ═══ */}
       <Typography variant="h5" fontWeight={600} color="var(--text-main)" sx={{ mb: 3 }}>

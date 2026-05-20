@@ -35,11 +35,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const fetchProfile = async (): Promise<boolean> => {
     try {
       const res = await api.get('/auth/me');
-      const profile: UserProfile = res.data;
-      setRole(profile.role);
-      setUserId(profile.id);
-      if (profile.role === 'supervisor' && profile.supervisor_type) {
-        setSupervisorType(profile.supervisor_type);
+      // The backend returns { id, role, email, profile: { supervisor_type, ... } }
+      const data = res.data;
+      setRole(data.role);
+      setUserId(data.id);
+      
+      const supType = data.profile?.supervisor_type || data.supervisor_type;
+      if (data.role === 'supervisor' && supType) {
+        setSupervisorType(supType);
       }
       setIsLoggedIn(true);
       return true;

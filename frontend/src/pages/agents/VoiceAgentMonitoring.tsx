@@ -87,7 +87,8 @@ const VoiceAgentMonitoring: React.FC = () => {
         .map(mapDashboardAgent);
       setAgents(voiceAgents);
       erroredRef.current = false;
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.response?.status === 401) return;
       if (!erroredRef.current) {
         erroredRef.current = true;
         console.error('Failed to load voice agents', err);
