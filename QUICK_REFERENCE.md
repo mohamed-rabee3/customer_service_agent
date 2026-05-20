@@ -63,7 +63,7 @@ A complete multi-channel messaging platform where:
 ### Database
 | File | Purpose | Status |
 |------|---------|--------|
-| `db/005_add_webhook_configs.sql` | Migration for multi-channel | ⏳ Needs running |
+| `db/006_ca_add_webhook_configs.sql` | Migration for multi-channel | ⏳ Needs running |
 
 ### Frontend Types
 | File | Update | Status |
@@ -112,7 +112,7 @@ A complete multi-channel messaging platform where:
 ## 🚀 Deployment Checklist
 
 ### Initial Setup (First Time)
-- [ ] Run database migration: `db/005_add_webhook_configs.sql`
+- [ ] Run database migration: `db/006_ca_add_webhook_configs.sql`
 - [ ] Install dependencies for both frontend and backend
 - [ ] Start full stack & ngrok tunnel: `python run_all.py` (from project root)
 - [ ] Get Telegram token from BotFather

@@ -3,7 +3,7 @@ from typing import Dict, Any, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from app.api.v1.schemas.auth import UserResponse
-from app.api.v1.schemas.analytics import SupervisorAnalytics, AgentAnalytics
+from app.api.v1.schemas.analytics import SupervisorAnalytics, AgentAnalytics, AdminAnalytics
 from app.api.deps import get_current_user
 from app.services.analytics_service import AnalyticsService
 from app.core.constants import UserRole
@@ -42,3 +42,15 @@ async def get_agent_analytics(
         raise HTTPException(status_code=403, detail="Not authorized")
         
     return await service.get_agent_analytics(agent_id, time_period)
+
+@router.get("/admin/overview", response_model=AdminAnalytics)
+async def get_admin_analytics(
+    time_period: str = Query("all_time", regex="^(today|week|month|all_time)$"),
+    current_user: UserResponse = Depends(get_current_user),
+):
+    """Get aggregate analytics across all supervisors for admin dashboard."""
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    service = AnalyticsService()
+    return await service.get_admin_analytics(time_period)

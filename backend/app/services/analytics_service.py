@@ -1,8 +1,10 @@
+"""Analytics service layer."""
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 from app.db.supabase import get_supabase_client
 from app.repositories.analytics_repository import AnalyticsRepository
-from app.api.v1.schemas.analytics import SupervisorAnalytics, AgentAnalytics
+from app.api.v1.schemas.analytics import SupervisorAnalytics, AgentAnalytics, AdminAnalytics
+
 
 class AnalyticsService:
     def __init__(self):
@@ -16,3 +18,7 @@ class AnalyticsService:
     async def get_agent_analytics(self, agent_id: UUID, time_period: str = "all_time") -> AgentAnalytics:
         """Get analytics for a specific agent."""
         return self.repository.get_agent_analytics(agent_id, time_period)
+
+    async def get_admin_analytics(self, time_period: str = "all_time") -> AdminAnalytics:
+        """Get aggregate analytics across all supervisors for admin dashboard."""
+        return self.repository.get_admin_analytics(time_period)

@@ -402,33 +402,56 @@ async def _handle_post_call(
             from datetime import datetime, timezone
 
             client = _get_client()
-            client.table("interactions").update({
-                "status": "completed",
-                "end_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("id", interaction_id).execute()
+            now_utc = datetime.now(timezone.utc)
 
-            joined = "\n".join(transcript_lines_snapshot or [])
-            (
-                summary_text,
-                issues_list,
-                topic_tags,
-                overall_perf,
-                sentiment_groq,
-            ) = await asyncio.to_thread(summarize_voice_call_groq, joined)
-            save_interaction_summary(
-                interaction_id=interaction_id,
-                summary=summary_text,
-                issues=issues_list,
-                tags=topic_tags,
+            # ── Abandonment detection ──
+            # A call is abandoned if the transcript is empty (no conversation)
+            # or contains no agent replies (customer spoke but agent never responded).
+            snap = transcript_lines_snapshot or []
+            has_agent_reply = any(
+                line.startswith("Agent:") for line in snap
             )
-            upsert_interaction_archive_record(
-                interaction_id=interaction_id,
-                summary=summary_text,
-                overall_performance=overall_perf,
-                sentiment=sentiment_groq,
-                issues=issues_list,
-                tags=topic_tags,
-            )
+            is_abandoned = len(snap) == 0 or not has_agent_reply
+
+            update_payload: dict = {
+                "status": "abandoned" if is_abandoned else "completed",
+                "end_at": now_utc.isoformat(),
+                "is_abandoned": is_abandoned,
+            }
+            client.table("interactions").update(
+                update_payload
+            ).eq("id", interaction_id).execute()
+
+            if is_abandoned:
+                logger.info(
+                    "Interaction %s marked as abandoned "
+                    "(transcript_lines=%d, has_agent_reply=%s)",
+                    interaction_id, len(snap), has_agent_reply,
+                )
+            else:
+                # Only run the expensive LLM summarization for real conversations
+                joined = "\n".join(snap)
+                (
+                    summary_text,
+                    issues_list,
+                    topic_tags,
+                    overall_perf,
+                    sentiment_groq,
+                ) = await asyncio.to_thread(summarize_voice_call_groq, joined)
+                save_interaction_summary(
+                    interaction_id=interaction_id,
+                    summary=summary_text,
+                    issues=issues_list,
+                    tags=topic_tags,
+                )
+                upsert_interaction_archive_record(
+                    interaction_id=interaction_id,
+                    summary=summary_text,
+                    overall_performance=overall_perf,
+                    sentiment=sentiment_groq,
+                    issues=issues_list,
+                    tags=topic_tags,
+                )
 
         logger.info(
             f"Post-call processing complete for agent {agent_db_id}, "

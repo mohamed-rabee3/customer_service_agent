@@ -42,8 +42,11 @@ def run_backend():
 
 def run_frontend():
     print("Starting Frontend...")
+    # Increase Node memory limit to prevent Vite OOM crash
+    env = os.environ.copy()
+    env["NODE_OPTIONS"] = "--max-old-space-size=8192"
     # Using shell=True for npm on Windows
-    p = subprocess.Popen("npm run dev -- --port " + str(FRONTEND_PORT), cwd=FRONTEND_DIR, shell=True)
+    p = subprocess.Popen("npm run dev -- --port " + str(FRONTEND_PORT), cwd=FRONTEND_DIR, shell=True, env=env)
     processes.append(p)
     return p
 
