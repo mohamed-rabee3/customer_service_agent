@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from app.core.constants import AgentStatus, AgentType
+from app.core.exceptions import NotFoundException
 from app.repositories.base import BaseRepository
 from app.db.supabase import get_supabase_client
 
@@ -62,6 +63,68 @@ class AgentRepository(BaseRepository[AgentModel]):
         )
 
         return [self.model_class.model_validate(agent) for agent in result.data]
+
+    def find_idle_agent_for_supervisors(
+        self,
+        agent_type: AgentType,
+        supervisor_ids: list[UUID],
+    ) -> AgentModel | None:
+        """
+        Return the first idle agent of the given type owned by an active supervisor.
+        """
+        if not supervisor_ids:
+            return None
+
+        result = (
+            self.client.table(self.table_name)
+            .select("*")
+            .eq("agent_type", agent_type.value)
+            .eq("status", AgentStatus.IDLE.value)
+            .in_("supervisor_id", [str(sid) for sid in supervisor_ids])
+            .order("created_at", desc=False)
+            .limit(1)
+            .execute()
+        )
+
+        if not result.data:
+            return None
+
+        return self.model_class.model_validate(result.data[0])
+
+    def get_by_id_and_supervisor(
+        self,
+        agent_id: UUID,
+        supervisor_id: UUID,
+    ) -> AgentModel | None:
+        """Get an agent only if it belongs to the given supervisor."""
+        result = (
+            self.client.table(self.table_name)
+            .select("*")
+            .eq("id", str(agent_id))
+            .eq("supervisor_id", str(supervisor_id))
+            .limit(1)
+            .execute()
+        )
+
+        if not result.data:
+            return None
+
+        return self.model_class.model_validate(result.data[0])
+
+    def update_status(self, agent_id: UUID, status: AgentStatus) -> AgentModel:
+        """Update agent status and bump updated_at."""
+        now = datetime.now(timezone.utc).isoformat()
+        result = (
+            self.client.table(self.table_name)
+            .update({"status": status.value, "updated_at": now})
+            .eq("id", str(agent_id))
+            .execute()
+        )
+
+        if not result.data:
+            raise NotFoundException(f"Agent {agent_id} not found")
+
+        return self.model_class.model_validate(result.data[0])
 
     def create_agent(
         self,

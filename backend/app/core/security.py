@@ -1,5 +1,6 @@
 """Security utilities for authentication and authorization."""
 
+import asyncio
 from datetime import datetime
 from typing import Annotated, Any, Dict
 from uuid import UUID
@@ -10,7 +11,7 @@ from supabase import Client
 
 from app.api.v1.schemas.auth import AdminProfile, SupervisorProfile, UserResponse
 from app.core.constants import SupervisorType, UserRole
-from app.db.supabase import get_supabase_client
+from app.db.supabase import get_supabase_client, run_supabase_request
 
 # HTTP Bearer token scheme (manual error handling for 401 responses)
 security = HTTPBearer(auto_error=False)
@@ -39,28 +40,9 @@ def _extract_display_name(user_metadata: Dict[str, Any] | None, fallback: str) -
     )
 
 
-async def get_current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
-) -> UserResponse:
-    """
-    Validate JWT token via Supabase and return the current user with role/profile.
-    """
-    if credentials is None or credentials.scheme.lower() != "bearer":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing Authorization header",
-        )
-
-    token = credentials.credentials
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing authentication token",
-        )
-
-    # 1. Verify token validity via Supabase Auth (using unauthenticated client for basic check)
+def _resolve_current_user_sync(token: str) -> UserResponse:
+    """Sync Supabase auth + role lookup (run via asyncio.to_thread from async routes)."""
     try:
-        # We fetch the client here BEFORE setting JWT just to verify the token itself
         auth_client = get_supabase_client()
         response = auth_client.auth.get_user(token)
     except Exception:
@@ -78,17 +60,16 @@ async def get_current_user(
     user_data = response.user
     user_id_str = str(user_data.id)
     user_uuid = UUID(user_id_str)
-    display_name = _extract_display_name(getattr(user_data, "user_metadata", None), user_data.email or "")
+    display_name = _extract_display_name(
+        getattr(user_data, "user_metadata", None), user_data.email or ""
+    )
 
-    # 2. Authenticate the user safely in the request context variable
-    # This MUST happen before fetching the client used for RLS-protected queries
     from app.db.supabase import request_jwt
+
     request_jwt.set(token)
 
-    # 3. Get an AUTHENTICATED client that respects RLS (userID = auth.uid())
     supabase: Client = get_supabase_client()
 
-    # Check admin role (RLS: admin can see their own row)
     admin_result = (
         supabase.table("admin")
         .select("created_at")
@@ -109,7 +90,6 @@ async def get_current_user(
             profile=profile,
         )
 
-    # Check supervisor role (RLS: supervisor can see their own row)
     supervisor_result = (
         supabase.table("supervisors")
         .select("supervisor_type, created_at")
@@ -143,4 +123,28 @@ async def get_current_user(
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="User role not found",
+    )
+
+
+async def get_current_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+) -> UserResponse:
+    """
+    Validate JWT token via Supabase and return the current user with role/profile.
+    """
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header",
+        )
+
+    token = credentials.credentials
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authentication token",
+        )
+
+    return await asyncio.to_thread(
+        lambda: run_supabase_request(lambda: _resolve_current_user_sync(token))
     )

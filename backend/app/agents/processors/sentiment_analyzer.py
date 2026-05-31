@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any
 
-from app.agents.llm.openrouter_llm import OpenRouterLLM
+from app.agents.llm.groq import GroqLLM
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ class SentimentAnalyzer:
     """
 
     def __init__(self):
-        self.llm = OpenRouterLLM()
+        self.llm = GroqLLM()
 
     async def analyze(self, conversation_history: list[dict]) -> dict[str, Any]:
         """

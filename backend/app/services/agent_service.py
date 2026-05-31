@@ -1,12 +1,20 @@
 """Agent service - Business logic layer for agent operations."""
 
 import logging
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import HTTPException, status
 
+from app.agents.chat_session_manager import ChatSessionManager
 from app.api.v1.schemas.agent import CreateAgentRequest, UpdateAgentRequest
-from app.core.constants import MAX_AGENTS_PER_SUPERVISOR, AgentStatus, AgentType
+from app.core.constants import (
+    MAX_AGENTS_PER_SUPERVISOR,
+    AgentStatus,
+    AgentType,
+    InteractionStatus,
+)
+from app.db.supabase import get_supabase_service_client
 from app.core.exceptions import (
     AgentBusyException,
     ForbiddenException,
@@ -35,6 +43,45 @@ def validate_telegram_token(token: str | None) -> bool:
         return False
     
     return True
+
+
+def _is_status_only_update(request: UpdateAgentRequest) -> bool:
+    """True when the request only changes agent status (pause / resume)."""
+    return request.status is not None and all(
+        field is None
+        for field in (
+            request.name,
+            request.system_prompt,
+            request.telegram_bot_token,
+            request.webhook_configs,
+            request.mcp_tools,
+        )
+    )
+
+
+async def release_agent_from_active_chats(agent_id: UUID) -> None:
+    """
+    End in-memory chat sessions and complete active DB interactions for an agent.
+
+    Used when pausing, resuming to idle, or deleting a chat agent that is stuck
+  in ``in_chat`` (e.g. after a server restart or an abandoned Telegram session).
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    db = get_supabase_service_client()
+
+    active_sessions = ChatSessionManager.get_active_sessions()
+    for interaction_id, chat_agent in list(active_sessions.items()):
+        if chat_agent.agent_id == agent_id:
+            await ChatSessionManager.end_session(interaction_id)
+
+    db.table("interactions").update({
+        "status": InteractionStatus.COMPLETED.value,
+        "end_at": now,
+    }).eq("agent_id", str(agent_id)).eq(
+        "status", InteractionStatus.ACTIVE.value
+    ).execute()
+
+    logger.info("Released agent %s from active chat sessions", agent_id)
 
 
 def list_agents(
@@ -194,9 +241,11 @@ def update_agent(
     """
     agent = get_agent(agent_id, supervisor_id)
 
-    # Check if agent is active
-    if agent.status in [AgentStatus.IN_CALL, AgentStatus.IN_CHAT]:
-        raise AgentBusyException("Cannot update agent while in active call/chat")
+    status_only = _is_status_only_update(request)
+    if agent.status == AgentStatus.IN_CALL and not status_only:
+        raise AgentBusyException("Cannot update agent while in active call")
+    if agent.status == AgentStatus.IN_CHAT and not status_only:
+        raise AgentBusyException("Cannot update agent while in active chat")
 
     # Validate Telegram token if provided
     if request.telegram_bot_token and not validate_telegram_token(request.telegram_bot_token):
@@ -243,28 +292,34 @@ def update_agent(
     return updated_agent
 
 
-def delete_agent(agent_id: UUID, supervisor_id: UUID) -> None:
+async def delete_agent(agent_id: UUID, supervisor_id: UUID) -> None:
     """
-    Delete an agent.
+    Delete an agent and cascade-delete its interaction history.
+
+    Interactions use ON DELETE RESTRICT on ``agent_id``, so child rows
+    (chat messages, archives, metrics) are removed first via interaction delete.
     """
     agent = get_agent(agent_id, supervisor_id)
 
-    # Check if agent is active
-    if agent.status in [AgentStatus.IN_CALL, AgentStatus.IN_CHAT]:
-         raise AgentBusyException("Cannot delete agent while in active call/chat")
+    if agent.status == AgentStatus.IN_CALL:
+        raise AgentBusyException("Cannot delete agent while in active call")
+    if agent.status == AgentStatus.IN_CHAT:
+        await release_agent_from_active_chats(agent_id)
+
+    token = (agent.telegram_bot_token or "").strip()
+    if token and token != "{}":
+        try:
+            await TelegramWebhookService.delete_webhook(token)
+        except Exception as e:
+            logger.warning("Failed to delete Telegram webhook for agent %s: %s", agent_id, e)
+
+    db = get_supabase_service_client()
+    db.table("interactions").delete().eq("agent_id", str(agent_id)).execute()
 
     try:
         agent_repository.delete(agent_id)
     except Exception as e:
         logger.error(f"Error deleting agent: {e}")
-        # Check for FK violation (ON DELETE RESTRICT in database.sql)
-        error_msg = str(e).lower()
-        if "foreign key constraint" in error_msg or "violates foreign key" in error_msg:
-             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Cannot delete agent that has existing interactions (history). Archive it instead.",
-            )
-            
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An internal database error occurred while deleting the agent.",
@@ -282,6 +337,14 @@ async def update_agent_with_telegram_webhook(
     Returns:
         Tuple of (updated_agent, webhook_set_successfully)
     """
+    agent = get_agent(agent_id, supervisor_id)
+    if (
+        _is_status_only_update(request)
+        and request.status in (AgentStatus.PAUSED, AgentStatus.IDLE)
+        and agent.status == AgentStatus.IN_CHAT
+    ):
+        await release_agent_from_active_chats(agent_id)
+
     # First, update the agent normally
     updated_agent = update_agent(agent_id, supervisor_id, request)
     

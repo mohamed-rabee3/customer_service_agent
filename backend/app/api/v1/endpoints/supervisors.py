@@ -1,5 +1,6 @@
 """Supervisor endpoints - Router layer for supervisor API."""
 
+import asyncio
 from typing import Annotated
 from uuid import UUID
 
@@ -43,8 +44,9 @@ async def get_supervisor_dashboard(
         401: Not authenticated
         404: Supervisor not found
     """
-    dashboard_data = supervisor_service.get_supervisor_dashboard(
-        supervisor_id=current_user.id,
+    dashboard_data = await asyncio.to_thread(
+        supervisor_service.get_supervisor_dashboard,
+        current_user.id,
     )
 
     return SupervisorDashboardResponse.model_validate(dashboard_data)

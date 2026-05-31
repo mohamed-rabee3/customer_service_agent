@@ -137,28 +137,37 @@ class SupervisorRepository(BaseRepository[SupervisorModel]):
                 .eq("status", "active")
                 .execute()
             )
-            interactions = interactions_result.data
+            interactions = sorted(
+                interactions_result.data or [],
+                key=lambda i: i.get("started_at") or "",
+                reverse=True,
+            )
             interaction_map = {i["agent_id"]: i for i in interactions}
-        
+
+        metrics_by_interaction: dict[str, dict[str, Any]] = {}
+        if interaction_map:
+            interaction_ids = [i["id"] for i in interaction_map.values()]
+            metrics_res = (
+                self.client.table("realtime_metrics")
+                .select("*")
+                .in_("interaction_id", interaction_ids)
+                .order("timestamp", desc=True)
+                .execute()
+            )
+            for row in metrics_res.data or []:
+                iid = row["interaction_id"]
+                if iid not in metrics_by_interaction:
+                    metrics_by_interaction[iid] = row
+
         # Enrich agents
         enriched_agents = []
         for agent in agents:
             agent_data = agent.copy()
             current_int = interaction_map.get(agent["id"])
-            
             latest_metrics = None
             if current_int:
-                metrics_res = (
-                    self.client.table("realtime_metrics")
-                    .select("*")
-                    .eq("interaction_id", current_int["id"])
-                    .order("timestamp", desc=True)
-                    .limit(1)
-                    .execute()
-                )
-                if metrics_res.data:
-                    latest_metrics = metrics_res.data[0]
-            
+                latest_metrics = metrics_by_interaction.get(current_int["id"])
+
             agent_data["current_interaction"] = current_int
             agent_data["latest_metrics"] = latest_metrics
             enriched_agents.append(agent_data)

@@ -14,7 +14,7 @@ def get_livekit_api() -> api.LiveKitAPI:
 
     if _livekit_api is None:
         _livekit_api = api.LiveKitAPI(
-            url=settings.livekit_url,
+            url=settings.livekit_api_url,
             api_key=settings.livekit_api_key,
             api_secret=settings.livekit_api_secret,
         )

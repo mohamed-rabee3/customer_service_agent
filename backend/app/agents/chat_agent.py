@@ -4,7 +4,7 @@ import logging
 from typing import Any, AsyncGenerator
 from uuid import UUID
 
-from app.agents.llm.openrouter_llm import OpenRouterLLM
+from app.agents.llm.groq import GroqLLM
 from app.agents.processors.sentiment_analyzer import SentimentAnalyzer
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ class ChatAgent:
         ]
 
         # LLM and analysis
-        self.llm = OpenRouterLLM()
+        self.llm = GroqLLM()
         self.sentiment_analyzer = SentimentAnalyzer()
 
     async def process_message(self, user_text: str) -> AsyncGenerator[str, None]:

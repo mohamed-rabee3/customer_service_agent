@@ -67,6 +67,8 @@ htmlcov/
 # Backend specific
 backend/.env
 backend/.env.local
+backend/secret-google/
+**/service-account*.json
 
 # Documentation
 /docs

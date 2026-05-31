@@ -10,9 +10,12 @@ from app.api.v1.schemas.agent import (
     AgentDetailResponse,
     AgentResponse,
     AgentStatusResponse,
+    AgentWhisperRequest,
+    AgentWhisperResponse,
     CreateAgentRequest,
     UpdateAgentRequest,
 )
+from app.services.whisper_service import WhisperService
 from app.api.v1.schemas.auth import UserResponse
 from app.core.constants import AgentType
 from app.core.security import get_current_user
@@ -177,6 +180,30 @@ async def update_agent(
     return response
 
 
+@router.post(
+    "/{agent_id}/whisper",
+    response_model=AgentWhisperResponse,
+    summary="Inject supervisor instruction (voice)",
+    description=(
+        "Send whisper instructions to an agent during an active call or chat. "
+        "Pauses the agent and delivers the instruction via LiveKit data channel."
+    ),
+)
+async def whisper_to_agent(
+    agent_id: UUID,
+    request: AgentWhisperRequest,
+    current_user: Annotated[UserResponse, Depends(get_current_user)],
+) -> AgentWhisperResponse:
+    """Inject a supervisor whisper into an active voice or chat interaction."""
+    service = WhisperService()
+    result = await service.send_whisper(
+        agent_id=agent_id,
+        supervisor_id=current_user.id,
+        instructions=request.instructions,
+    )
+    return AgentWhisperResponse.model_validate(result)
+
+
 @router.delete(
     "/{agent_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -194,9 +221,9 @@ async def delete_agent(
         401: Not authenticated
         403: Not authorized to delete this agent
         404: Agent not found
-        409: Cannot delete agent while in active call/chat
+        409: Cannot delete agent while in active voice call
     """
-    agent_service.delete_agent(
+    await agent_service.delete_agent(
         agent_id=agent_id,
         supervisor_id=current_user.id,
     )

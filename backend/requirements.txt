@@ -17,6 +17,7 @@ livekit-api>=1.0.0
 
 # AI Services (direct SDK access, separate from LiveKit plugins)
 google-generativeai>=0.8.0
+google-auth>=2.0.0
 groq>=0.11.0
 openai>=1.40.0
 

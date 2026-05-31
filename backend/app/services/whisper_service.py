@@ -63,27 +63,42 @@ class WhisperService:
         whisper_id = str(uuid4())
         paused_at = datetime.now(timezone.utc)
 
-        # Update agent status to paused
-        self.agent_repo.update_status(agent_id, AgentStatus.PAUSED)
+        room_name = await room_manager.resolve_livekit_room_name(
+            interaction.call_source_id,
+            agent_id=str(agent_id),
+            interaction_id=str(interaction.id),
+        )
+        if not room_name:
+            raise ValidationException(
+                "No LiveKit room linked to this interaction. "
+                "Ensure the mock call is connected and LIVEKIT_URL matches the voice worker."
+            )
 
-        # Send whisper via LiveKit data message
-        if interaction.call_source_id:
-            whisper_data = {
-                "whisper_id": whisper_id,
-                "instructions": instructions,
-                "paused_at": paused_at.isoformat(),
-            }
+        whisper_data = {
+            "whisper_id": whisper_id,
+            "instructions": instructions,
+            "paused_at": paused_at.isoformat(),
+        }
+        try:
             await room_manager.send_data_to_room(
-                room_name=interaction.call_source_id,
+                room_name=room_name,
                 data=whisper_data,
                 topic="whisper",
             )
+        except Exception as e:
+            raise ValidationException(
+                f"Could not deliver whisper to LiveKit room '{room_name}'. "
+                "Confirm the customer mock call is connected and the voice worker "
+                f"uses the same LIVEKIT_URL as the API. ({e})"
+            ) from e
+
+        # Pause only after LiveKit delivery succeeds
+        self.agent_repo.update_status(agent_id, AgentStatus.PAUSED)
 
         acknowledged_at = datetime.now(timezone.utc)
 
         logger.info(
-            f"Whisper {whisper_id} sent to agent {agent_id} "
-            f"in room {interaction.call_source_id}"
+            f"Whisper {whisper_id} sent to agent {agent_id} in room {room_name}"
         )
 
         return {

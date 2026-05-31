@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from app.agents.chat_session_manager import ChatSessionManager
 from app.api.v1.schemas.webhooks import TelegramUpdate
 from app.core.constants import AgentStatus, InteractionStatus, InteractionType
+from app.core.config import settings
 from app.db.supabase import get_supabase_client, get_supabase_service_client
 
 logger = logging.getLogger(__name__)
@@ -104,7 +105,9 @@ async def telegram_webhook(
         return {"status": "error", "reason": "agent_not_found"}
         
     agent = agent_result.data[0]
-    bot_token = agent.get("telegram_bot_token")
+    bot_token = (agent.get("telegram_bot_token") or "").strip()
+    if bot_token in ("", "{}"):
+        bot_token = (settings.telegram_bot_token or "").strip()
     if not bot_token:
         logger.error(f"Agent {agent_id} does not have a telegram bot token configured.")
         return {"status": "ignored", "reason": "agent_telegram_not_configured"}
@@ -145,6 +148,9 @@ async def telegram_webhook(
              
     else:
         # New session needed
+        if agent["status"] == AgentStatus.PAUSED.value:
+            return {"status": "ignored", "reason": "agent_paused"}
+
         # If agent is busy, let the user know
         if agent["status"] != AgentStatus.IDLE.value and agent["status"] != AgentStatus.IN_CHAT.value:
             # Note: We might allow multiple chats per agent in the future. Right now, checking if idle.

@@ -62,6 +62,7 @@ class InteractionRepository(BaseRepository[Interaction]):
                 .select("*")
                 .eq("agent_id", str(agent_id))
                 .eq("status", InteractionStatus.ACTIVE.value)
+                .order("started_at", desc=True)
                 .limit(1)
                 .execute()
             )

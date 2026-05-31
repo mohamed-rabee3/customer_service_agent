@@ -206,7 +206,12 @@ const ChatMonitoring: React.FC = () => {
             toast.success(`Agent ${newStatus === 'paused' ? 'turned off' : 'turned on'}`);
             fetchAgents();
         } catch (err: any) {
-            toast.error('Failed to change agent status');
+            const detail = err?.response?.data?.detail;
+            toast.error(
+                typeof detail === 'string'
+                    ? detail
+                    : 'Failed to change agent status',
+            );
         }
     };
 

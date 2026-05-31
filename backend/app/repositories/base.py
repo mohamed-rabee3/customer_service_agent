@@ -35,7 +35,14 @@ class BaseRepository(Generic[T]):
         """
         self.table_name = table_name
         self.model_class = model_class
-        self.client = client or get_supabase_service_client()
+        self._client_override = client
+
+    @property
+    def client(self) -> Client:
+        """Per-thread service client unless a fixed client was injected (tests)."""
+        if self._client_override is not None:
+            return self._client_override
+        return get_supabase_service_client()
 
     def get_all(self, skip: int = 0, limit: int = 100) -> list[T]:
         """

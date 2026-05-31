@@ -1,5 +1,6 @@
 """Interaction service with business logic."""
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, timezone
@@ -16,9 +17,26 @@ from app.core.exceptions import NotFoundException, ValidationException
 from app.livekit import room_manager, token_service
 from app.repositories.agent_repository import AgentRepository
 from app.repositories.interaction_repository import InteractionRepository
+from app.db.supabase import run_supabase_request
 from app.repositories.supervisor_repository import supervisor_repository
 
 logger = logging.getLogger(__name__)
+
+LIVEKIT_START_TIMEOUT_SECONDS = 30.0
+
+
+def _create_interaction_db_record(
+    interaction_repo: InteractionRepository,
+    interaction_data: dict,
+) -> dict:
+    response = (
+        interaction_repo.client.table("interactions")
+        .insert(interaction_data)
+        .execute()
+    )
+    if not response.data:
+        raise Exception("Failed to create interaction record")
+    return response.data[0]
 
 
 class InteractionService:
@@ -55,10 +73,18 @@ class InteractionService:
         cutoff = datetime.now(timezone.utc) - timedelta(
             seconds=SUPERVISOR_MONITORING_PRESENCE_TTL_SECONDS
         )
-        active_supervisor_ids = supervisor_repository.list_user_ids_active_since(cutoff)
-        agent = self.agent_repo.find_idle_agent_for_supervisors(
-            agent_type, active_supervisor_ids
-        )
+
+        def _find_agent() -> tuple[list[UUID], object | None]:
+            def _query() -> tuple[list[UUID], object | None]:
+                ids = supervisor_repository.list_user_ids_active_since(cutoff)
+                found = self.agent_repo.find_idle_agent_for_supervisors(
+                    agent_type, ids
+                )
+                return ids, found
+
+            return run_supabase_request(_query)
+
+        active_supervisor_ids, agent = await asyncio.to_thread(_find_agent)
         if not agent:
             if not active_supervisor_ids:
                 raise ValidationException(
@@ -83,18 +109,17 @@ class InteractionService:
         }
 
         try:
-            response = (
-                self.interaction_repo.client.table("interactions")
-                .insert(interaction_data)
-                .execute()
+            interaction = await asyncio.to_thread(
+                lambda: run_supabase_request(
+                    lambda: _create_interaction_db_record(
+                        self.interaction_repo,
+                        interaction_data,
+                    )
+                )
             )
         except Exception as e:
             raise Exception(f"Failed to create interaction: {e}") from e
 
-        if not response.data:
-            raise Exception("Failed to create interaction record")
-
-        interaction = response.data[0]
         interaction_id_str = str(interaction["id"])
 
         room_metadata = {
@@ -109,7 +134,8 @@ class InteractionService:
         from app.livekit.client import get_livekit_api
 
         lk = get_livekit_api()
-        try:
+
+        async def _start_livekit() -> None:
             await room_manager.create_room(room_name, metadata=room_metadata)
             await lk.agent_dispatch.create_dispatch(
                 lk_api.CreateAgentDispatchRequest(
@@ -118,6 +144,17 @@ class InteractionService:
                     metadata=json.dumps(room_metadata),
                 )
             )
+
+        try:
+            await asyncio.wait_for(
+                _start_livekit(),
+                timeout=LIVEKIT_START_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError as e:
+            raise Exception(
+                f"Timed out starting LiveKit session after "
+                f"{LIVEKIT_START_TIMEOUT_SECONDS:.0f}s — check LIVEKIT_URL and worker"
+            ) from e
         except Exception as e:
             try:
                 await room_manager.delete_room(room_name)
@@ -142,7 +179,11 @@ class InteractionService:
             if interaction_type == InteractionType.VOICE
             else AgentStatus.IN_CHAT
         )
-        self.agent_repo.update_status(agent.id, new_status)
+        await asyncio.to_thread(
+            lambda: run_supabase_request(
+                lambda: self.agent_repo.update_status(agent.id, new_status)
+            )
+        )
 
         logger.info(
             f"Created interaction {interaction['id']} "
@@ -153,7 +194,7 @@ class InteractionService:
             "interaction_id": interaction["id"],
             "agent": agent,
             "livekit_token": customer_token,
-            "livekit_url": settings.livekit_url,
+            "livekit_url": settings.livekit_ws_url,
         }
 
     def list_interactions(
