@@ -63,7 +63,11 @@ const SatisfactionGauge: React.FC<{ score: number }> = ({ score }) => {
   );
 };
 
-const ChatArchive: React.FC = () => {
+interface ChatArchiveProps {
+  variant?: 'standalone' | 'section';
+}
+
+const ChatArchive: React.FC<ChatArchiveProps> = ({ variant = 'standalone' }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [chatLogs, setChatLogs] = useState<ChatLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -122,10 +126,28 @@ const ChatArchive: React.FC = () => {
     setExpandedId(prev => prev === id ? null : id);
   };
 
+  const isSection = variant === 'section';
+
   return (
-    <Box sx={{ p: { xs: 2, md: 4 }, bgcolor: 'var(--bg)', minHeight: '100vh' }}>
-      <Typography variant="h4" fontWeight={900} color="var(--text-main)" sx={{ mb: 1 }}>Chat Transcripts</Typography>
-      <Typography variant="body1" color="var(--text-secondary)" sx={{ mb: 4 }}>Your recent chat history — click any record to reveal insights</Typography>
+    <Box sx={isSection ? undefined : { p: { xs: 2, md: 4 }, bgcolor: 'var(--bg)', minHeight: '100vh' }}>
+      <Typography
+        variant={isSection ? 'h5' : 'h4'}
+        fontWeight={900}
+        color="var(--text-main)"
+        sx={{ mb: 1 }}
+      >
+        Chat
+      </Typography>
+      {!isSection && (
+        <Typography variant="body1" color="var(--text-secondary)" sx={{ mb: 4 }}>
+          Your recent chat history — click any record to reveal insights
+        </Typography>
+      )}
+      {isSection && (
+        <Typography variant="body2" color="var(--text-secondary)" sx={{ mb: 3 }}>
+          Recent chat transcripts
+        </Typography>
+      )}
 
       <Stack spacing={2}>
         {chatLogs.map((log, idx) => {
@@ -235,6 +257,11 @@ const ChatArchive: React.FC = () => {
             </motion.div>
           );
         })}
+        {!loading && chatLogs.length === 0 && (
+          <Typography variant="body2" color="var(--text-secondary)" sx={{ py: 3, textAlign: 'center' }}>
+            No chat records found
+          </Typography>
+        )}
       </Stack>
     </Box>
   );

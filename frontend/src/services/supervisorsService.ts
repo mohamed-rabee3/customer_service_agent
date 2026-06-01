@@ -15,6 +15,7 @@ export const supervisorsAPI = {
 
   update: (id: string, data: Partial<{
     name?: string;
+    email?: string;
     supervisor_type: 'voice' | 'chat';
   }>) => api.put(`/supervisors/${id}`, data),
 

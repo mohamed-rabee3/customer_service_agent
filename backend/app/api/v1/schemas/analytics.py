@@ -45,9 +45,16 @@ class SupervisorSummary(BaseModel):
     supervisor_id: str
     performance_score: float
     total_interactions: int
+    avg_handle_time: float = 0.0
     avg_csat: float
     fcr_percentage: float
     containment_rate: float = 0.0
+
+
+class PeakInteractionPoint(BaseModel):
+    """Hourly interaction distribution point for charts."""
+    hour: str
+    interactions: int
 
 
 class AdminAnalytics(BaseModel):
@@ -66,3 +73,4 @@ class AdminAnalytics(BaseModel):
     chat_resolution_rate: float = 0.0
     performance_score: float = 0.0
     supervisors_breakdown: List[SupervisorSummary] = []
+    peak_interaction_hours: List[PeakInteractionPoint] = []

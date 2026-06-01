@@ -71,7 +71,11 @@ function formatDurationSeconds(sec: number | null | undefined): string {
   return `${m}:${String(r).padStart(2, '0')}`;
 }
 
-const VoiceArchive: React.FC = () => {
+interface VoiceArchiveProps {
+  variant?: 'standalone' | 'section';
+}
+
+const VoiceArchive: React.FC<VoiceArchiveProps> = ({ variant = 'standalone' }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [callLogs, setCallLogs] = useState<CallLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -127,10 +131,28 @@ const VoiceArchive: React.FC = () => {
     setExpandedId(prev => prev === id ? null : id);
   };
 
+  const isSection = variant === 'section';
+
   return (
-    <Box sx={{ p: { xs: 2, md: 4 }, bgcolor: 'var(--bg)', minHeight: '100vh' }}>
-      <Typography variant="h4" fontWeight={900} color="var(--text-main)" sx={{ mb: 1 }}>Recent Calls</Typography>
-      <Typography variant="body1" color="var(--text-secondary)" sx={{ mb: 4 }}>Your voice call history — click any record to reveal insights</Typography>
+    <Box sx={isSection ? undefined : { p: { xs: 2, md: 4 }, bgcolor: 'var(--bg)', minHeight: '100vh' }}>
+      <Typography
+        variant={isSection ? 'h5' : 'h4'}
+        fontWeight={900}
+        color="var(--text-main)"
+        sx={{ mb: 1 }}
+      >
+        Voice
+      </Typography>
+      {!isSection && (
+        <Typography variant="body1" color="var(--text-secondary)" sx={{ mb: 4 }}>
+          Your voice call history — click any record to reveal insights
+        </Typography>
+      )}
+      {isSection && (
+        <Typography variant="body2" color="var(--text-secondary)" sx={{ mb: 3 }}>
+          Recent voice call records
+        </Typography>
+      )}
 
       <Stack spacing={2}>
         {callLogs.map((log, idx) => {
@@ -249,6 +271,11 @@ const VoiceArchive: React.FC = () => {
             </motion.div>
           );
         })}
+        {!loading && callLogs.length === 0 && (
+          <Typography variant="body2" color="var(--text-secondary)" sx={{ py: 3, textAlign: 'center' }}>
+            No voice records found
+          </Typography>
+        )}
       </Stack>
     </Box>
   );

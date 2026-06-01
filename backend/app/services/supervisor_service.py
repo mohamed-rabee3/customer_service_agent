@@ -8,7 +8,13 @@ from fastapi import HTTPException, status
 from app.api.v1.schemas.supervisor import SupervisorCreate, SupervisorUpdate
 from app.core.constants import SupervisorType, UserRole
 from app.core.exceptions import ForbiddenException, NotFoundException
-from app.db.supabase import get_supabase_client, get_supabase_service_client
+from app.core.auth_emails import (
+    get_auth_profiles_for_user_ids,
+    get_display_name_for_user_id,
+    get_email_for_user_id,
+    get_emails_for_user_ids,
+)
+from app.db.supabase import get_supabase_service_client
 from app.repositories.supervisor_repository import SupervisorModel, supervisor_repository
 
 
@@ -50,12 +56,34 @@ def list_supervisors(
         supervisor_type=supervisor_type,
     )
 
+    supervisor_ids = [s.id for s in supervisors]
+    email_map = get_emails_for_user_ids(supervisor_ids)
+    profile_map = get_auth_profiles_for_user_ids(supervisor_ids)
+
+    # Batch count agents per supervisor for fast team-overview rendering.
+    agent_count_map: dict[str, int] = {}
+    if supervisor_ids:
+        supabase_admin = get_supabase_service_client()
+        agent_rows = (
+            supabase_admin.table("agents")
+            .select("supervisor_id")
+            .in_("supervisor_id", [str(sid) for sid in supervisor_ids])
+            .execute()
+        ).data or []
+        for row in agent_rows:
+            sid = str(row.get("supervisor_id", ""))
+            if not sid:
+                continue
+            agent_count_map[sid] = agent_count_map.get(sid, 0) + 1
+
     return {
         "supervisors": [
             {
                 "id": s.id,
-                "name": s.name or "",
+                "email": email_map.get(str(s.id)) or profile_map.get(str(s.id), {}).get("email") or "",
+                "name": s.name or profile_map.get(str(s.id), {}).get("name") or "",
                 "supervisor_type": s.supervisor_type,
+                "agent_count": agent_count_map.get(str(s.id), 0),
                 "performance_score": s.performance_score,
                 "total_interactions": s.total_interactions,
                 "created_at": s.created_at,
@@ -93,7 +121,8 @@ def get_supervisor_detail(
 
     return {
         "id": supervisor.id,
-        "name": supervisor.name or "",
+        "email": get_email_for_user_id(supervisor.id) or "",
+        "name": supervisor.name or get_display_name_for_user_id(supervisor.id) or "",
         "supervisor_type": supervisor.supervisor_type,
         "performance_score": supervisor.performance_score,
         "total_interactions": supervisor.total_interactions,
@@ -154,6 +183,7 @@ def create_supervisor(data: SupervisorCreate) -> dict:
 
     row = result.data[0]
     row["id"] = row.get("userID", row.get("id"))
+    row["email"] = data.email
     row.setdefault("name", "")
     row.setdefault("total_interactions", 0)
     return row
@@ -163,54 +193,89 @@ def update_supervisor(supervisor_id: UUID, data: SupervisorUpdate) -> dict:
     """
     Update a supervisor's fields.
     """
-    supabase = get_supabase_client()
+    supabase_admin = get_supabase_service_client()
 
-    # Verify supervisor exists
     supervisor = supervisor_repository.get_by_id(supervisor_id)
     if supervisor is None:
         raise NotFoundException("Supervisor not found")
 
-    payload = {k: v for k, v in data.model_dump(exclude_none=True).items()}
+    payload = data.model_dump(exclude_none=True, mode="json")
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No fields to update",
         )
 
-    # Synchronize name with Auth user metadata if provided
-    if "name" in payload:
+    email_update = payload.pop("email", None)
+    name_update = payload.pop("name", None)
+    supervisor_type_update = payload.pop("supervisor_type", None)
+
+    # Treat empty email updates as "no change"
+    if email_update is not None and str(email_update).strip() == "":
+        email_update = None
+
+    # Sync auth user profile (name + email live in Supabase Auth)
+    auth_updates: dict = {}
+    if name_update is not None:
         try:
-            supabase_admin = get_supabase_service_client()
-            supabase_admin.auth.admin.update_user_by_id(
-                str(supervisor_id), 
-                {"user_metadata": {"name": payload["name"]}}
-            )
+            existing_user = supabase_admin.auth.admin.get_user_by_id(str(supervisor_id))
+            existing_meta = getattr(existing_user.user, "user_metadata", None) or {}
+            auth_updates["user_metadata"] = {**existing_meta, "name": name_update}
         except Exception:
-            pass  # best-effort sync for auth display
+            auth_updates["user_metadata"] = {"name": name_update}
 
-    # Convert enum values to strings for Supabase
-    if "supervisor_type" in payload:
-        payload["supervisor_type"] = payload["supervisor_type"].value
+    if email_update is not None:
+        auth_updates["email"] = email_update
+        auth_updates["email_confirm"] = True
 
-    payload["updated_at"] = datetime.now(timezone.utc).isoformat()
+    if auth_updates:
+        try:
+            supabase_admin.auth.admin.update_user_by_id(str(supervisor_id), auth_updates)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to update auth user: {exc}",
+            ) from exc
+
+    # Persistable fields in the supervisors table.
+    # Display name is derived from Supabase auth metadata, so we only update DB fields we know exist.
+    db_updates: dict = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    if supervisor_type_update is not None:
+        db_updates["supervisor_type"] = supervisor_type_update
+
+    # Allow optional analytics fields if explicitly provided
+    for optional_field in ("performance_score", "total_interactions"):
+        if optional_field in payload:
+            db_updates[optional_field] = payload[optional_field]
+
+    if len(db_updates) == 1:
+        # Only updated_at — auth-only change is still valid
+        pass
 
     result = (
-        supabase.table("supervisors")
-        .update(payload)
+        supabase_admin.table("supervisors")
+        .update(db_updates)
         .eq("userID", str(supervisor_id))
         .execute()
     )
 
     if not result.data:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Update blocked by database policy",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Supervisor not found or update failed",
         )
 
     row = result.data[0]
     row["id"] = row.get("userID", row.get("id"))
-    row.setdefault("name", "")
-    row.setdefault("total_interactions", 0)
+    row["email"] = email_update or get_email_for_user_id(supervisor_id) or ""
+    row["name"] = (
+        name_update
+        or row.get("name")
+        or get_display_name_for_user_id(supervisor_id)
+        or supervisor.name
+        or ""
+    )
+    row.setdefault("total_interactions", supervisor.total_interactions or 0)
     return row
 
 
@@ -224,7 +289,7 @@ def delete_supervisor(supervisor_id: UUID, deleted_by: str) -> dict:
     4. Delete supervisor record
     5. Delete auth user
     """
-    supabase = get_supabase_client()
+    supabase_admin = get_supabase_service_client()
 
     # Verify supervisor exists
     supervisor = supervisor_repository.get_by_id(supervisor_id)
@@ -233,7 +298,7 @@ def delete_supervisor(supervisor_id: UUID, deleted_by: str) -> dict:
 
     # Get supervisor's agents
     agents_result = (
-        supabase.table("agents")
+        supabase_admin.table("agents")
         .select("id")
         .eq("supervisor_id", str(supervisor_id))
         .execute()
@@ -243,7 +308,7 @@ def delete_supervisor(supervisor_id: UUID, deleted_by: str) -> dict:
     # Check for active interactions
     if agent_ids:
         active_result = (
-            supabase.table("interactions")
+            supabase_admin.table("interactions")
             .select("id")
             .in_("agent_id", agent_ids)
             .eq("status", "active")
@@ -257,14 +322,13 @@ def delete_supervisor(supervisor_id: UUID, deleted_by: str) -> dict:
 
     # Cascade delete: interactions → agents → supervisor
     if agent_ids:
-        supabase.table("interactions").delete().in_("agent_id", agent_ids).execute()
-        supabase.table("agents").delete().in_("id", agent_ids).execute()
+        supabase_admin.table("interactions").delete().in_("agent_id", agent_ids).execute()
+        supabase_admin.table("agents").delete().in_("id", agent_ids).execute()
 
-    supabase.table("supervisors").delete().eq("userID", str(supervisor_id)).execute()
+    supabase_admin.table("supervisors").delete().eq("userID", str(supervisor_id)).execute()
 
     # Delete auth user
     try:
-        supabase_admin = get_supabase_service_client()
         supabase_admin.auth.admin.delete_user(str(supervisor_id))
     except Exception:
         pass  # Auth user deletion is best-effort

@@ -41,6 +41,7 @@ export interface SupervisorSummaryData {
   supervisor_id: string;
   performance_score: number;
   total_interactions: number;
+  avg_handle_time: number;
   avg_csat: number;
   fcr_percentage: number;
   containment_rate: number;
@@ -61,6 +62,10 @@ export interface AdminAnalyticsData {
   chat_resolution_rate: number;
   performance_score: number;
   supervisors_breakdown: SupervisorSummaryData[];
+  peak_interaction_hours: {
+    hour: string;
+    interactions: number;
+  }[];
 }
 
 // ── API Calls ──

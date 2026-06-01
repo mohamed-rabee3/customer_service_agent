@@ -12,6 +12,7 @@ from app.core.exceptions import (
     ForbiddenException,
     NotFoundException,
 )
+from app.db.supabase import get_supabase_service_client
 from app.repositories.agent_repository import AgentModel, agent_repository
 from app.services.telegram_webhook_service import TelegramWebhookService
 
@@ -110,6 +111,7 @@ def create_agent(
             telegram_bot_token=request.telegram_bot_token.strip() if request.telegram_bot_token and request.telegram_bot_token != "{}" else "{}",
             webhook_configs=webhook_configs,
             agent_type=agent_type,
+            status=request.status or AgentStatus.IDLE,
         )
         
         if request.telegram_bot_token or (webhook_configs.get("telegram", {}).get("enabled")):
@@ -249,22 +251,38 @@ def delete_agent(agent_id: UUID, supervisor_id: UUID) -> None:
     """
     agent = get_agent(agent_id, supervisor_id)
 
-    # Check if agent is active
     if agent.status in [AgentStatus.IN_CALL, AgentStatus.IN_CHAT]:
-         raise AgentBusyException("Cannot delete agent while in active call/chat")
+        raise AgentBusyException("Cannot delete agent while in active call/chat")
+
+    supabase_admin = get_supabase_service_client()
+
+    active_result = (
+        supabase_admin.table("interactions")
+        .select("id")
+        .eq("agent_id", str(agent_id))
+        .eq("status", "active")
+        .execute()
+    )
+    if active_result.data:
+        raise AgentBusyException("Cannot delete agent while in active call/chat")
 
     try:
+        # Remove historical interactions first (archives cascade via FK)
+        supabase_admin.table("interactions").delete().eq("agent_id", str(agent_id)).execute()
         agent_repository.delete(agent_id)
+    except NotFoundException:
+        raise
+    except AgentBusyException:
+        raise
     except Exception as e:
         logger.error(f"Error deleting agent: {e}")
-        # Check for FK violation (ON DELETE RESTRICT in database.sql)
         error_msg = str(e).lower()
         if "foreign key constraint" in error_msg or "violates foreign key" in error_msg:
-             raise HTTPException(
+            raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Cannot delete agent that has existing interactions (history). Archive it instead.",
             )
-            
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An internal database error occurred while deleting the agent.",

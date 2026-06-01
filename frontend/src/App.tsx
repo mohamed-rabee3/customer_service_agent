@@ -9,8 +9,7 @@ import { UserProfileProvider } from './context/UserProfileContext';
 
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminArchive from './pages/admin/AdminArchive';
-import VoiceArchive from './pages/admin/VoiceArchive';
-import ChatArchive from './pages/admin/ChatArchive';
+import SupervisorArchive from './pages/admin/SupervisorArchive';
 import CallDetails from './pages/admin/CallDetails';
 import ArchiveIssues from './pages/admin/ArchiveIssues';
 import SettingsPage from './pages/admin/SettingsPage';
@@ -25,9 +24,9 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
 const ArchiveRouter: React.FC = () => {
-  const { role, supervisorType } = useAuth();
+  const { role } = useAuth();
   if (role === 'supervisor') {
-    return supervisorType === 'voice' ? <VoiceArchive /> : <ChatArchive />;
+    return <SupervisorArchive />;
   }
   return <AdminArchive />;
 };

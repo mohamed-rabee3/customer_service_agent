@@ -6,15 +6,60 @@ import AgentAvatar from '@/components/agents/AgentAvatar';
 import '@/components/agents/VoiceAgentSelector.css';
 import { agentsAPI } from '@/services/agentsService';
 import { supervisorsAPI } from '@/services/supervisorsService';
+import { useAuth } from '@/context/AuthContext';
 
 interface Agent {
     id: string;
     name: string;
     agent_type: 'voice' | 'chat';
     system_prompt: string;
-    status: string;
+    status: 'idle' | 'in_call' | 'in_chat' | 'paused';
     mcp_tools: Record<string, any>;
 }
+
+const AGENT_TYPE_OPTIONS = [
+    { value: 'voice', label: 'Voice Agent' },
+    { value: 'chat', label: 'Chat Agent' },
+] as const;
+
+const AGENT_STATUS_OPTIONS = [
+    { value: 'idle', label: 'Idle (Active)' },
+    { value: 'paused', label: 'Paused (Suspended)' },
+    { value: 'in_call', label: 'In Call' },
+    { value: 'in_chat', label: 'In Chat' },
+] as const;
+
+type AgentFormData = {
+    name: string;
+    system_prompt: string;
+    agent_type: 'voice' | 'chat';
+    status: 'idle' | 'in_call' | 'in_chat' | 'paused';
+};
+
+const defaultFormData = (agentType: 'voice' | 'chat' = 'voice'): AgentFormData => ({
+    name: '',
+    system_prompt: '',
+    agent_type: agentType,
+    status: 'idle',
+});
+
+const selectStyle: React.CSSProperties = {
+    backgroundColor: 'var(--bg-dark)',
+    borderColor: 'var(--border)',
+    color: 'var(--text-main)',
+};
+
+const getApiErrorMessage = (err: unknown, fallback: string): string => {
+    const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail;
+    if (Array.isArray(detail)) {
+        return detail
+            .map((item) => (typeof item === 'string' ? item : (item as { msg?: string })?.msg))
+            .filter(Boolean)
+            .join(', ') || fallback;
+    }
+    return fallback;
+};
 
 // ── Agent Config Card (Voice Agent style) ──
 interface AgentCardProps {
@@ -159,15 +204,16 @@ const AddAgentCard: React.FC<{ index: number; onClick: () => void }> = ({ index,
 interface FormModalProps {
     open: boolean;
     title: string;
-    formData: { name: string; system_prompt: string; };
-    onChange: (data: { name: string; system_prompt: string; }) => void;
+    formData: AgentFormData;
+    onChange: (data: AgentFormData) => void;
     onSubmit: () => void;
     onClose: () => void;
     submitLabel: string;
     loading?: boolean;
+    isEdit?: boolean;
 }
 
-const AgentFormModal: React.FC<FormModalProps> = ({ open, title, formData, onChange, onSubmit, onClose, submitLabel, loading }) => {
+const AgentFormModal: React.FC<FormModalProps> = ({ open, title, formData, onChange, onSubmit, onClose, submitLabel, loading, isEdit }) => {
     const [animState, setAnimState] = useState<'entering' | 'exiting' | ''>('');
 
     React.useEffect(() => {
@@ -220,6 +266,38 @@ const AgentFormModal: React.FC<FormModalProps> = ({ open, title, formData, onCha
                         />
                     </div>
                     <div>
+                        <label className="text-xs font-semibold uppercase tracking-widest mb-1 block" style={{ color: 'var(--text-muted)' }}>Type</label>
+                        <select
+                            value={formData.agent_type}
+                            onChange={(e) => onChange({ ...formData, agent_type: e.target.value as AgentFormData['agent_type'] })}
+                            className="w-full px-4 py-3 rounded-xl border outline-none"
+                            style={selectStyle}
+                        >
+                            {AGENT_TYPE_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-xs font-semibold uppercase tracking-widest mb-1 block" style={{ color: 'var(--text-muted)' }}>Status</label>
+                        <select
+                            value={formData.status}
+                            onChange={(e) => onChange({ ...formData, status: e.target.value as AgentFormData['status'] })}
+                            className="w-full px-4 py-3 rounded-xl border outline-none"
+                            style={selectStyle}
+                            disabled={isEdit && (formData.status === 'in_call' || formData.status === 'in_chat')}
+                        >
+                            {(isEdit ? AGENT_STATUS_OPTIONS : AGENT_STATUS_OPTIONS.filter((o) => o.value === 'idle' || o.value === 'paused')).map((opt) => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                        </select>
+                        {isEdit && (formData.status === 'in_call' || formData.status === 'in_chat') && (
+                            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                                Status cannot be changed while the agent is in an active session.
+                            </p>
+                        )}
+                    </div>
+                    <div>
                         <label className="text-xs font-semibold uppercase tracking-widest mb-1 block" style={{ color: 'var(--text-muted)' }}>System Prompt</label>
                         <textarea
                             value={formData.system_prompt}
@@ -251,6 +329,7 @@ const AgentFormModal: React.FC<FormModalProps> = ({ open, title, formData, onCha
 
 // ── Main Page ──
 const AgentConfiguration: React.FC = () => {
+    const { supervisorType } = useAuth();
     const [agents, setAgents] = useState<Agent[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -258,9 +337,10 @@ const AgentConfiguration: React.FC = () => {
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
-    const [formData, setFormData] = useState({ name: '', system_prompt: '' });
+    const [formData, setFormData] = useState<AgentFormData>(defaultFormData());
+    const agentToDeleteRef = useRef<string | null>(null);
 
-    const resetForm = () => setFormData({ name: '', system_prompt: '' });
+    const resetForm = () => setFormData(defaultFormData(supervisorType));
 
     // Fetch agents from the supervisor dashboard endpoint
     const fetchAgents = async () => {
@@ -294,7 +374,12 @@ const AgentConfiguration: React.FC = () => {
         if (!formData.system_prompt.trim()) { toast.warn('Please enter a system prompt'); return; }
         setSaving(true);
         try {
-            await agentsAPI.create({ name: formData.name, system_prompt: formData.system_prompt });
+            await agentsAPI.create({
+                name: formData.name,
+                system_prompt: formData.system_prompt,
+                agent_type: formData.agent_type,
+                status: formData.status,
+            });
             toast.success('Agent created successfully');
             setAddModalOpen(false);
             resetForm();
@@ -311,9 +396,19 @@ const AgentConfiguration: React.FC = () => {
         // Fetch full detail to get system_prompt
         try {
             const res = await agentsAPI.getById(agent.id);
-            setFormData({ name: res.data.name, system_prompt: res.data.system_prompt || '' });
+            setFormData({
+                name: res.data.name,
+                system_prompt: res.data.system_prompt || '',
+                agent_type: res.data.agent_type,
+                status: res.data.status,
+            });
         } catch {
-            setFormData({ name: agent.name, system_prompt: agent.system_prompt });
+            setFormData({
+                name: agent.name,
+                system_prompt: agent.system_prompt,
+                agent_type: agent.agent_type,
+                status: agent.status,
+            });
         }
         setEditModalOpen(true);
     };
@@ -324,7 +419,12 @@ const AgentConfiguration: React.FC = () => {
         if (!formData.system_prompt.trim()) { toast.warn('Please enter a system prompt'); return; }
         setSaving(true);
         try {
-            await agentsAPI.update(selectedAgent.id, { name: formData.name, system_prompt: formData.system_prompt });
+            await agentsAPI.update(selectedAgent.id, {
+                name: formData.name,
+                system_prompt: formData.system_prompt,
+                agent_type: formData.agent_type,
+                status: formData.status,
+            });
             toast.success('Agent updated successfully');
             setEditModalOpen(false);
             setSelectedAgent(null);
@@ -338,21 +438,27 @@ const AgentConfiguration: React.FC = () => {
     };
 
     const handleDeleteClick = (agent: Agent) => {
+        agentToDeleteRef.current = agent.id;
         setSelectedAgent(agent);
         setDeleteModalOpen(true);
     };
 
     const handleDeleteConfirm = async () => {
-        if (!selectedAgent) return;
+        const agentId = agentToDeleteRef.current ?? selectedAgent?.id;
+        if (!agentId) {
+            toast.error('No agent selected for deletion');
+            return;
+        }
         setSaving(true);
         try {
-            await agentsAPI.delete(selectedAgent.id);
+            await agentsAPI.delete(agentId);
             toast.success('Agent deleted');
             setDeleteModalOpen(false);
             setSelectedAgent(null);
+            agentToDeleteRef.current = null;
             fetchAgents();
         } catch (err: unknown) {
-            toast.error((err as any)?.response?.data?.detail || 'Failed to delete agent');
+            toast.error(getApiErrorMessage(err, 'Failed to delete agent'));
         } finally {
             setSaving(false);
         }
@@ -408,10 +514,11 @@ const AgentConfiguration: React.FC = () => {
                 onClose={() => { setEditModalOpen(false); setSelectedAgent(null); }}
                 submitLabel="Save Changes"
                 loading={saving}
+                isEdit
             />
             <DeleteConfirmModal
                 open={deleteModalOpen}
-                onClose={() => { setDeleteModalOpen(false); setSelectedAgent(null); }}
+                onClose={() => { setDeleteModalOpen(false); setSelectedAgent(null); agentToDeleteRef.current = null; }}
                 onConfirm={handleDeleteConfirm}
                 itemName={selectedAgent?.name || ''}
                 isDeleting={saving}

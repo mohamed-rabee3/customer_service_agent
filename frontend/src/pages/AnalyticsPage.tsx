@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
     BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
     XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -190,6 +190,14 @@ const AnalyticsPage: React.FC = () => {
     const [selectedPeriod, setSelectedPeriod] = useState("today");
     const [isLoading, setIsLoading] = useState(true);
     const isSupervisor = role === 'supervisor';
+    const cacheRef = useRef<Map<string, { ts: number; payload: { metrics: {
+        fcr: number; totalCalls: number; aht: number; csat: number;
+        performance: number; sentimentShift: number; containment: number;
+        escalationTime: number; coachingFreq: number;
+        chatResponseTime: number; chatResolution: number;
+        voiceCount: number; chatCount: number;
+        agents: AgentAnalyticsData[];
+    }; peakHours: { hour: string; interactions: number }[] } }>>(new Map());
 
     // Unified metrics state
     const [metrics, setMetrics] = useState<{
@@ -205,6 +213,7 @@ const AnalyticsPage: React.FC = () => {
         chatResponseTime: 0, chatResolution: 0, voiceCount: 0, chatCount: 0,
         agents: [],
     });
+    const [peakHours, setPeakHours] = useState<{ hour: string; interactions: number }[]>([]);
 
     useEffect(() => {
         setIsLoading(true);
@@ -212,24 +221,45 @@ const AnalyticsPage: React.FC = () => {
             try {
                 if (!userId) return;
                 const apiPeriod = mapUiPeriodToApi(selectedPeriod);
+                const cacheKey = `${role}:${userId}:${apiPeriod}`;
+                const cached = cacheRef.current.get(cacheKey);
+                if (cached && Date.now() - cached.ts < 30000) {
+                    setMetrics(cached.payload.metrics);
+                    setPeakHours(cached.payload.peakHours);
+                    return;
+                }
 
                 if (role === "admin") {
                     // Single backend call replaces N+1 loop
                     const res = await analyticsAPI.getAdminOverview(apiPeriod);
                     const d = res.data;
-                    setMetrics({
-                        fcr: d.avg_fcr ?? 0, totalCalls: d.total_interactions ?? 0,
-                        aht: d.avg_handle_time ?? 0, csat: d.overall_csat ?? 0,
-                        performance: d.performance_score ?? 0,
-                        sentimentShift: d.avg_sentiment_shift ?? 0,
-                        containment: d.containment_rate ?? 0,
-                        escalationTime: d.avg_escalation_resolution_time ?? 0,
-                        coachingFreq: d.coaching_frequency ?? 0,
-                        chatResponseTime: d.chat_avg_response_time ?? 0,
-                        chatResolution: d.chat_resolution_rate ?? 0,
-                        voiceCount: d.total_voice_interactions ?? 0,
-                        chatCount: d.total_chat_interactions ?? 0,
+                    const next = {
+                        fcr: Number(d.avg_fcr ?? 0) || 0,
+                        totalCalls: Number(d.total_interactions ?? 0) || 0,
+                        aht: Number(d.avg_handle_time ?? 0) || 0,
+                        csat: Number(d.overall_csat ?? 0) || 0,
+                        performance: Number(d.performance_score ?? 0) || 0,
+                        sentimentShift: Number(d.avg_sentiment_shift ?? 0) || 0,
+                        containment: Number(d.containment_rate ?? 0) || 0,
+                        escalationTime: Number(d.avg_escalation_resolution_time ?? 0) || 0,
+                        coachingFreq: Number(d.coaching_frequency ?? 0) || 0,
+                        chatResponseTime: Number(d.chat_avg_response_time ?? 0) || 0,
+                        chatResolution: Number(d.chat_resolution_rate ?? 0) || 0,
+                        voiceCount: Number(d.total_voice_interactions ?? 0) || 0,
+                        chatCount: Number(d.total_chat_interactions ?? 0) || 0,
                         agents: [],
+                    };
+                    const nextPeak = Array.isArray(d.peak_interaction_hours)
+                        ? d.peak_interaction_hours.map((p) => ({
+                            hour: String(p.hour ?? ""),
+                            interactions: Number(p.interactions ?? 0) || 0,
+                        }))
+                        : [];
+                    setMetrics(next);
+                    setPeakHours(nextPeak);
+                    cacheRef.current.set(cacheKey, {
+                        ts: Date.now(),
+                        payload: { metrics: next, peakHours: nextPeak },
                     });
                     return;
                 }
@@ -237,19 +267,27 @@ const AnalyticsPage: React.FC = () => {
                 // Supervisor view
                 const res = await analyticsAPI.getBySupervisor(userId, apiPeriod);
                 const d = res.data;
-                setMetrics({
-                    fcr: d.fcr_percentage ?? 0, totalCalls: d.total_interactions ?? 0,
-                    aht: d.avg_handle_time ?? 0, csat: d.avg_csat ?? 0,
-                    performance: d.performance_score ?? 0,
-                    sentimentShift: d.avg_sentiment_shift ?? 0,
-                    containment: d.containment_rate ?? 0,
-                    escalationTime: d.avg_escalation_resolution_time ?? 0,
-                    coachingFreq: d.coaching_frequency ?? 0,
-                    chatResponseTime: d.chat_avg_response_time ?? 0,
-                    chatResolution: d.chat_resolution_rate ?? 0,
-                    voiceCount: d.total_voice_interactions ?? 0,
-                    chatCount: d.total_chat_interactions ?? 0,
+                const next = {
+                    fcr: Number(d.fcr_percentage ?? 0) || 0,
+                    totalCalls: Number(d.total_interactions ?? 0) || 0,
+                    aht: Number(d.avg_handle_time ?? 0) || 0,
+                    csat: Number(d.avg_csat ?? 0) || 0,
+                    performance: Number(d.performance_score ?? 0) || 0,
+                    sentimentShift: Number(d.avg_sentiment_shift ?? 0) || 0,
+                    containment: Number(d.containment_rate ?? 0) || 0,
+                    escalationTime: Number(d.avg_escalation_resolution_time ?? 0) || 0,
+                    coachingFreq: Number(d.coaching_frequency ?? 0) || 0,
+                    chatResponseTime: Number(d.chat_avg_response_time ?? 0) || 0,
+                    chatResolution: Number(d.chat_resolution_rate ?? 0) || 0,
+                    voiceCount: Number(d.total_voice_interactions ?? 0) || 0,
+                    chatCount: Number(d.total_chat_interactions ?? 0) || 0,
                     agents: d.agents_breakdown ?? [],
+                };
+                setMetrics(next);
+                setPeakHours([]);
+                cacheRef.current.set(cacheKey, {
+                    ts: Date.now(),
+                    payload: { metrics: next, peakHours: [] },
                 });
             } catch (err) {
                 console.error("Failed to fetch analytics", err);
@@ -259,11 +297,13 @@ const AnalyticsPage: React.FC = () => {
                     coachingFreq: 0, chatResponseTime: 0, chatResolution: 0,
                     voiceCount: 0, chatCount: 0, agents: [],
                 });
+                setPeakHours([]);
             } finally {
                 setIsLoading(false);
             }
         };
-        fetchAnalytics();
+        const t = setTimeout(fetchAnalytics, 200);
+        return () => clearTimeout(t);
     }, [selectedPeriod, userId, role]);
 
     // Chart data
@@ -275,6 +315,8 @@ const AnalyticsPage: React.FC = () => {
     const sentimentData = [
         { label: "Sentiment Shift", value: metrics.sentimentShift },
     ];
+
+    const peakData = peakHours;
 
     return (
         <div className="min-h-screen w-full" style={{ backgroundColor: 'var(--bg)' }}>
@@ -409,6 +451,41 @@ const AnalyticsPage: React.FC = () => {
                                 <SectionCard title="Agent Performance Breakdown" delay={700}>
                                     <AgentTable agents={metrics.agents} />
                                 </SectionCard>
+                            )}
+
+                            {/* ── Peak Interaction Time (Admin only) ── */}
+                            {role === "admin" && (
+                                <div className="mt-6">
+                                    <SectionCard title="Peak Interaction Time" delay={750}>
+                                        {peakData.length > 0 ? (
+                                            <ResponsiveContainer width="100%" height={280}>
+                                                <LineChart data={peakData}>
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
+                                                    <XAxis dataKey="hour" stroke="var(--text-secondary)" tick={{ fontSize: 11 }} />
+                                                    <YAxis stroke="var(--text-secondary)" tick={{ fontSize: 11 }} />
+                                                    <Tooltip
+                                                        contentStyle={{
+                                                            backgroundColor: 'var(--surface)',
+                                                            border: '0.5px solid var(--border)',
+                                                            borderRadius: 'var(--radius-md)',
+                                                            fontFamily: "'Inter', sans-serif",
+                                                        }}
+                                                    />
+                                                    <Line
+                                                        type="monotone"
+                                                        dataKey="interactions"
+                                                        stroke="hsl(var(--primary))"
+                                                        strokeWidth={2}
+                                                        dot={{ r: 2 }}
+                                                        activeDot={{ r: 5 }}
+                                                    />
+                                                </LineChart>
+                                            </ResponsiveContainer>
+                                        ) : (
+                                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No peak-time data available</p>
+                                        )}
+                                    </SectionCard>
+                                </div>
                             )}
 
                             {/* ── Agent Bar Chart (Supervisor only) ── */}

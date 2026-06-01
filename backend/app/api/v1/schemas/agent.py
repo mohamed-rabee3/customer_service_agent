@@ -19,7 +19,8 @@ class CreateAgentRequest(BaseModel):
     telegram_bot_token: str | None = Field(None, description="(Deprecated) Telegram Bot Token - use webhook_configs instead")
     webhook_configs: dict[str, Any] = Field(default_factory=dict, description="Multi-channel webhook configurations (telegram, whatsapp, instagram)")
     mcp_tools: dict[str, Any] = Field(default_factory=dict, description="MCP tools JSON configuration")
-    agent_type: str | None = Field(None, description="Agent Type ('voice' or 'chat')")
+    agent_type: AgentType | None = Field(None, description="Agent type (voice or chat)")
+    status: AgentStatus | None = Field(None, description="Initial agent status (defaults to idle)")
 
     @field_validator("mcp_tools", mode="before")
     @classmethod
@@ -42,6 +43,7 @@ class UpdateAgentRequest(BaseModel):
     telegram_bot_token: str | None = Field(None, description="(Deprecated) Telegram Bot Token - use webhook_configs instead")
     webhook_configs: dict[str, Any] | None = Field(None, description="Multi-channel webhook configurations (telegram, whatsapp, instagram)")
     mcp_tools: dict[str, Any] | None = Field(None, description="MCP tools JSON configuration")
+    agent_type: AgentType | None = Field(None, description="Agent type (voice or chat)")
     status: AgentStatus | None = Field(None, description="Current agent status")
 
     @field_validator("mcp_tools", mode="before")

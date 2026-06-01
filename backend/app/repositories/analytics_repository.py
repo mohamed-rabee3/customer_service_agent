@@ -4,7 +4,11 @@ from datetime import datetime, timedelta
 from uuid import UUID
 from supabase import Client
 from app.api.v1.schemas.analytics import (
-    SupervisorAnalytics, AgentAnalytics, AdminAnalytics, SupervisorSummary
+    SupervisorAnalytics,
+    AgentAnalytics,
+    AdminAnalytics,
+    SupervisorSummary,
+    PeakInteractionPoint,
 )
 
 import logging
@@ -454,17 +458,48 @@ class AnalyticsRepository:
         w_perf = sum(s.performance_score * s.total_interactions for s in all_sup_analytics) / total
 
         sup_breakdown = []
-        for sa in all_sup_analytics:
-            # Find supervisor ID from the loop
-            idx = all_sup_analytics.index(sa)
+        for idx, sa in enumerate(all_sup_analytics):
             sup_breakdown.append(SupervisorSummary(
                 supervisor_id=sup_ids[idx],
                 performance_score=sa.performance_score,
                 total_interactions=sa.total_interactions,
+                avg_handle_time=sa.avg_handle_time,
                 avg_csat=sa.avg_csat,
                 fcr_percentage=sa.fcr_percentage,
                 containment_rate=sa.containment_rate,
             ))
+
+        # Peak interaction time chart data (24h buckets)
+        now = datetime.utcnow()
+        start_date = None
+        if time_period == "today":
+            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        elif time_period == "week":
+            start_date = now - timedelta(days=7)
+        elif time_period == "month":
+            start_date = now - timedelta(days=30)
+
+        peak_buckets = {h: 0 for h in range(24)}
+        try:
+            iq = self.supabase.table("interactions").select("started_at")
+            if start_date:
+                iq = iq.gte("started_at", start_date.isoformat())
+            interaction_rows = iq.execute().data or []
+            for row in interaction_rows:
+                ts = _parse_time(row.get("started_at"))
+                if not ts:
+                    continue
+                peak_buckets[ts.hour] = peak_buckets.get(ts.hour, 0) + 1
+        except Exception as e:
+            logger.warning("Peak interaction buckets failed: %s", e)
+
+        peak_points = [
+            PeakInteractionPoint(
+                hour=f"{h:02d}:00",
+                interactions=peak_buckets.get(h, 0),
+            )
+            for h in range(24)
+        ]
 
         return AdminAnalytics(
             overall_csat=w_csat,
@@ -481,4 +516,5 @@ class AnalyticsRepository:
             chat_resolution_rate=w_chat_res / total_chat if total_chat else 0.0,
             performance_score=w_perf,
             supervisors_breakdown=sup_breakdown,
+            peak_interaction_hours=peak_points,
         )

@@ -1,9 +1,13 @@
 """Analytics service layer."""
+from time import time
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 from app.db.supabase import get_supabase_client
 from app.repositories.analytics_repository import AnalyticsRepository
 from app.api.v1.schemas.analytics import SupervisorAnalytics, AgentAnalytics, AdminAnalytics
+
+_ADMIN_ANALYTICS_CACHE: dict[str, tuple[float, AdminAnalytics]] = {}
+_CACHE_TTL_SECONDS = 30.0
 
 
 class AnalyticsService:
@@ -21,4 +25,11 @@ class AnalyticsService:
 
     async def get_admin_analytics(self, time_period: str = "all_time") -> AdminAnalytics:
         """Get aggregate analytics across all supervisors for admin dashboard."""
-        return self.repository.get_admin_analytics(time_period)
+        now = time()
+        cached = _ADMIN_ANALYTICS_CACHE.get(time_period)
+        if cached and (now - cached[0]) < _CACHE_TTL_SECONDS:
+            return cached[1]
+
+        result = self.repository.get_admin_analytics(time_period)
+        _ADMIN_ANALYTICS_CACHE[time_period] = (now, result)
+        return result

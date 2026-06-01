@@ -1,6 +1,8 @@
 """Admin service."""
 from typing import List, Dict, Any
+from uuid import UUID
 from app.db.supabase import get_supabase_client
+from app.core.auth_emails import get_emails_for_user_ids
 from app.api.v1.schemas.admin import AdminDashboardResponse, SupervisorCard, LeaderboardEntry
 
 class AdminService:
@@ -12,6 +14,7 @@ class AdminService:
         # 1. Get all supervisors
         sup_res = self.supabase.table("supervisors").select("*").order("performance_score", desc=True).limit(100).execute()
         all_supervisors = sup_res.data or []
+        email_map = get_emails_for_user_ids([UUID(item["userID"]) for item in all_supervisors])
         
         # 2. Get active interactions count per supervisor
         active_res = self.supabase.table("interactions").select("agent_id, agents!inner(supervisor_id)").eq("status", "active").execute()
@@ -24,14 +27,14 @@ class AdminService:
         # 3. Build active supervisors list
         active_list_models = []
         for item in all_supervisors:
-            sup_id = item["userID"]
+            sup_id = str(item["userID"])
             active_count = active_stats.get(sup_id, 0)
             
             if active_count > 0:
                 active_list_models.append(SupervisorCard(
-                    id=sup_id,
-                    name=item.get("name", "Supervisor"),
-                    email=item.get("email"),
+                    id=UUID(sup_id),
+                    name=item.get("name") or email_map.get(sup_id) or "Supervisor",
+                    email=email_map.get(sup_id),
                     supervisor_type=item["supervisor_type"],
                     created_at=item["created_at"],
                     is_active=True,

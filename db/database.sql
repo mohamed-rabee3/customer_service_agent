@@ -42,6 +42,7 @@ CREATE TYPE tool_permission_status_enum AS ENUM ('pending', 'allowed', 'denied',
 -- Stores supervisor user information (1:1 with auth.users)
 CREATE TABLE supervisors (
     "userID" UUID PRIMARY KEY,
+    name VARCHAR(255) DEFAULT '' NOT NULL,
     supervisor_type supervisor_type_enum NOT NULL,
     performance_score DOUBLE PRECISION DEFAULT 0.0,
     total_interactions INTEGER DEFAULT 0 NOT NULL,

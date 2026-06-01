@@ -8,7 +8,7 @@ from supabase import create_client
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
@@ -23,7 +23,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 def generate_password(length=14):
     """Simple password for testing."""
-    return "Pass1234!"
+    return "Pass1234!Test"
 
 async def create_users():
     print("Initializing user creation with Service Role Key (RLS Bypassed)...")

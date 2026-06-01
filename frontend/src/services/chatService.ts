@@ -2,7 +2,7 @@
 import api from './api';
 import { supabase } from '../lib/supabase';
 
-const API_BASE = 'http://localhost:8000/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/v1';
 
 export const chatAPI = {
   /** POST /chat/sessions — Start a new chat session */

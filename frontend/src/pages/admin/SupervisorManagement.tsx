@@ -29,11 +29,21 @@ import DeleteConfirmModal from '../../components/modals/DeleteConfirmModal';
 
 interface Supervisor {
   id: string;
-  email: string;
-  role: string;
+  email?: string | null;
+  name?: string;
   supervisor_type: 'voice' | 'chat';
   created_at?: string;
 }
+
+const typeChipSx = (type: 'voice' | 'chat') => ({
+  borderRadius: 'var(--radius-sm)',
+  background: type === 'voice' ? 'var(--action-primary-bg)' : 'var(--action-success-bg)',
+  color: type === 'voice' ? 'var(--action-primary)' : 'var(--action-success)',
+  fontWeight: 600,
+  fontSize: 11,
+  textTransform: 'uppercase' as const,
+  border: `1px solid ${type === 'voice' ? 'var(--action-primary)' : 'var(--action-success)'}`,
+});
 
 const SupervisorManagement: React.FC = () => {
   const [supervisors, setSupervisors] = useState<Supervisor[]>([]);
@@ -99,7 +109,7 @@ const SupervisorManagement: React.FC = () => {
       setEditModalOpen(false);
       setSelectedSupervisor(null);
       resetForm();
-      fetchSupervisors();
+      await fetchSupervisors();
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || 'Failed to update supervisor');
     } finally {
@@ -160,6 +170,7 @@ const SupervisorManagement: React.FC = () => {
           <Table>
             <TableHead>
               <TableRow sx={{ background: 'rgba(84,119,146,0.04)' }}>
+                <TableCell sx={{ fontWeight: 700, color: 'var(--text-secondary)' }}>ID</TableCell>
                 <TableCell sx={{ fontWeight: 700, color: 'var(--text-secondary)' }}>Email</TableCell>
                 <TableCell sx={{ fontWeight: 700, color: 'var(--text-secondary)' }}>Role</TableCell>
                 <TableCell sx={{ fontWeight: 700, color: 'var(--text-secondary)' }}>Type</TableCell>
@@ -169,29 +180,27 @@ const SupervisorManagement: React.FC = () => {
             <TableBody>
               {supervisors.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} align="center" sx={{ py: 6, color: 'var(--text-muted)' }}>
+                  <TableCell colSpan={5} align="center" sx={{ py: 6, color: 'var(--text-muted)' }}>
                     No supervisors found.
                   </TableCell>
                 </TableRow>
               ) : (
                 supervisors.map((sup) => (
                   <TableRow key={sup.id} sx={{ '&:last-child td, &:last-child th': { border: 0 }, borderColor: 'var(--border)' }}>
-                    <TableCell sx={{ color: 'var(--text-main)', fontWeight: 500 }}>{sup.email || (sup as any).UserEmail || sup.id}</TableCell>
+                    <TableCell sx={{ color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: 12 }}>
+                      {sup.id}
+                    </TableCell>
+                    <TableCell sx={{ color: 'var(--text-main)', fontWeight: 500 }}>
+                      {sup.email || '—'}
+                    </TableCell>
                     <TableCell>
-                      <Chip label={sup.role || 'Supervisor'} size="small" sx={{ borderRadius: 'var(--radius-sm)', background: 'var(--primary-hex)', color: '#fff', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' }} />
+                      <Chip label="Supervisor" size="small" sx={{ borderRadius: 'var(--radius-sm)', background: 'var(--primary-hex)', color: 'var(--text-inverse)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' }} />
                     </TableCell>
                     <TableCell>
                       <Chip 
                         label={sup.supervisor_type} 
                         size="small" 
-                        sx={{ 
-                          borderRadius: 'var(--radius-sm)', 
-                          background: sup.supervisor_type === 'voice' ? 'var(--blue)' : 'var(--success)', 
-                          color: '#fff', 
-                          fontWeight: 600, 
-                          fontSize: 11, 
-                          textTransform: 'uppercase' 
-                        }} 
+                        sx={typeChipSx(sup.supervisor_type)} 
                       />
                     </TableCell>
                     <TableCell align="right">

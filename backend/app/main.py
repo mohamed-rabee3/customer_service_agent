@@ -28,6 +28,18 @@ app.add_middleware(
 app.include_router(api_router, prefix="/v1")
 
 
+@app.get("/")
+async def root():
+    """Landing page for the API server (avoids confusing 404 on /)."""
+    return {
+        "message": "Customer Service AI Agents Platform API",
+        "docs": "/docs",
+        "health": "/health",
+        "api_prefix": "/v1",
+        "frontend_dev": "http://localhost:8080",
+    }
+
+
 # Exception handler for custom exceptions
 @app.exception_handler(BaseAppException)
 async def app_exception_handler(request: Request, exc: BaseAppException):

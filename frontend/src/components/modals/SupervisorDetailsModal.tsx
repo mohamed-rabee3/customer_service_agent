@@ -46,8 +46,11 @@ const SupervisorDetailsModal: React.FC<SupervisorDetailsModalProps> = ({
   const email = supervisor.email || `${supervisor.name.toLowerCase().replace(' ', '.')}@company.com`;
   const phone = supervisor.phone || '+971 50 123 4567';
   const status = supervisor.status || 'Active';
-  const agentsCount = supervisor.agentsCount || Math.floor(Math.random() * 10) + 5;
   const employeeId = supervisor.employeeId || `EMP-${String(supervisor.id).padStart(4, '0')}`;
+  const agentsCount = supervisor.agentsCount ?? 0;
+  const totalCalls = supervisor.totalCalls ?? 0;
+  const performanceScore = supervisor.performance ?? 0;
+  const avgHandleTime = supervisor.avgTime || '—';
 
   return (
     <AnimatePresence>
@@ -270,7 +273,7 @@ const SupervisorDetailsModal: React.FC<SupervisorDetailsModalProps> = ({
                       transition: 'background-color 0.3s ease-in-out',
                     }}>
                       <Typography variant="h5" fontWeight={700} color="var(--modal-text)">
-                        {supervisor.totalCalls}
+                        {totalCalls}
                       </Typography>
                       <Typography variant="caption" color="var(--modal-text-muted)">
                         Monthly Calls
@@ -285,7 +288,7 @@ const SupervisorDetailsModal: React.FC<SupervisorDetailsModalProps> = ({
                       transition: 'background-color 0.3s ease-in-out',
                     }}>
                       <Typography variant="h5" fontWeight={700} color="var(--status-performance)">
-                        {supervisor.performance}%
+                        {performanceScore}%
                       </Typography>
                       <Typography variant="caption" color="var(--modal-text-muted)">
                         Performance
@@ -300,7 +303,7 @@ const SupervisorDetailsModal: React.FC<SupervisorDetailsModalProps> = ({
                       transition: 'background-color 0.3s ease-in-out',
                     }}>
                       <Typography variant="h5" fontWeight={700} color="var(--accent-hex)">
-                        {supervisor.avgTime}
+                        {avgHandleTime}
                       </Typography>
                       <Typography variant="caption" color="var(--modal-text-muted)">
                         Avg Handle Time

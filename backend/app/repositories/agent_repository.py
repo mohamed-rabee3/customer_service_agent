@@ -72,6 +72,7 @@ class AgentRepository(BaseRepository[AgentModel]):
         telegram_bot_token: str | None = None,
         webhook_configs: dict[str, Any] | None = None,
         agent_type: AgentType = AgentType.VOICE,
+        status: AgentStatus = AgentStatus.IDLE,
     ) -> AgentModel:
         """
         Create a new agent.
@@ -97,7 +98,7 @@ class AgentRepository(BaseRepository[AgentModel]):
             "name": name,
             "agent_type": agent_type.value,
             "system_prompt": system_prompt,
-            "status": AgentStatus.IDLE.value,
+            "status": status.value,
             "telegram_bot_token": telegram_bot_token or "{}",
             "webhook_configs": webhook_configs,
             "mcp_tools": mcp_tools,

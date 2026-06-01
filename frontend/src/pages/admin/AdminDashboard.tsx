@@ -29,6 +29,7 @@ import { useAuth } from '../../context/AuthContext';
 import { supervisorsAPI } from '../../services/supervisorsService';
 import { adminAPI } from '../../services/adminService';
 import { analyticsAPI, type AdminAnalyticsData } from '../../services/analyticsService';
+import { toast } from 'react-toastify';
 
 import {
   faUser,
@@ -139,10 +140,20 @@ interface LeaderboardSupervisor {
   id: string;
   rank: number;
   name: string;
+  email: string;
   type: 'Voice' | 'Chat';
+  agentsCount: number;
   totalCalls: number;
   performance: number;
   avgTime: string;
+}
+
+function formatAvgHandleSeconds(sec: number | undefined | null): string {
+  if (sec == null || Number.isNaN(Number(sec)) || sec <= 0) return '—';
+  const s = Math.floor(Number(sec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, '0')}`;
 }
 
 const AdminDashboard: React.FC = () => {
@@ -160,6 +171,7 @@ const AdminDashboard: React.FC = () => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Active supervisor detail modal
   const [activeSup, setActiveSup] = useState<ActiveSupervisor | null>(null);
@@ -180,33 +192,55 @@ const AdminDashboard: React.FC = () => {
     setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
   };
 
+  const loadSupervisors = async () => {
+    const res = await supervisorsAPI.getAll();
+    const sups: Record<string, any>[] = Array.isArray(res.data?.supervisors)
+      ? res.data.supervisors
+      : Array.isArray(res.data?.items)
+        ? res.data.items
+        : Array.isArray(res.data)
+          ? res.data
+          : [];
+
+    const mapped: ActiveSupervisor[] = sups.map((s) => ({
+      id: s.id,
+      name: s.name || s.email || 'Supervisor',
+      type: s.supervisor_type === 'voice' ? 'Voice Agent' : 'Chat Agent',
+      email: s.email || '',
+      performance: 0,
+      activeCalls: 0,
+      totalToday: 0,
+      failed: 0,
+    }));
+    setActiveSupervisors(mapped);
+
+    setLeaderBoard((prev) => {
+      const prevById = new Map(prev.map((row) => [String(row.id), row]));
+      return sups.map((s, idx) => {
+        const existing = prevById.get(String(s.id));
+        return {
+          id: s.id,
+          rank: idx + 1,
+          name: s.name || s.email || 'Supervisor',
+          email: s.email || '',
+          type: s.supervisor_type === 'voice' ? 'Voice' as const : 'Chat' as const,
+          agentsCount: Number(s.agent_count ?? existing?.agentsCount ?? 0) || 0,
+          totalCalls: existing?.totalCalls ?? 0,
+          performance: existing?.performance ?? Math.round(s.performance_score ?? 0),
+          avgTime: existing?.avgTime ?? '—',
+        };
+      });
+    });
+
+    return mapped;
+  };
+
   // Fetch data from the real API
   useEffect(() => {
     const fetchData = async () => {
       try {
         if (isAdmin) {
-          // Fetch supervisors list
-          const res = await supervisorsAPI.getAll();
-          const sups = res.data.supervisors || res.data.items || res.data || [];
-          const mapped: ActiveSupervisor[] = (Array.isArray(sups) ? sups : []).map((s: Record<string, any>) => ({
-            id: s.id,
-            name: s.email || `Supervisor`,
-            type: s.supervisor_type === 'voice' ? 'Voice Agent' : 'Chat Agent',
-            performance: 0,
-            activeCalls: 0,
-            totalToday: 0,
-            failed: 0,
-          }));
-          setActiveSupervisors(mapped);
-          setLeaderBoard(mapped.map((s, idx) => ({
-            id: s.id,
-            rank: idx + 1,
-            name: s.name,
-            type: s.type.includes('Voice') ? 'Voice' as const : 'Chat' as const,
-            totalCalls: 0,
-            performance: 0,
-            avgTime: '0:00',
-          })));
+          await loadSupervisors();
 
           // Fetch admin KPI overview
           try {
@@ -222,6 +256,7 @@ const AdminDashboard: React.FC = () => {
                     ...row,
                     totalCalls: sb.total_interactions,
                     performance: Math.round(sb.performance_score),
+                    avgTime: formatAvgHandleSeconds(sb.avg_handle_time),
                   };
                 }
                 return row;
@@ -302,40 +337,75 @@ const AdminDashboard: React.FC = () => {
 
   const handleEditSubmit = async (data: { name: string; type: 'voice' | 'chat'; email: string }) => {
     if (!selectedRow) return;
+    setIsSavingEdit(true);
     try {
-      await supervisorsAPI.update(selectedRow.id, { name: data.name, supervisor_type: data.type });
-      setLeaderBoard(prev => prev.map(s => 
-        s.id === selectedRow.id 
-          ? { ...s, name: data.name, type: data.type === 'voice' ? 'Voice' : 'Chat' }
-          : s
-      ));
-    } catch (err) {
-      console.error('Failed to update supervisor', err);
+      const res = await supervisorsAPI.update(selectedRow.id, {
+        name: data.name,
+        email: data.email,
+        supervisor_type: data.type,
+      });
+      const updated = res.data as {
+        id: string;
+        name?: string;
+        email?: string;
+        supervisor_type?: 'voice' | 'chat';
+      };
+      const nextName = updated.name || data.name;
+      const nextEmail = updated.email || data.email;
+      const nextType = (updated.supervisor_type || data.type) === 'voice' ? 'Voice' as const : 'Chat' as const;
+
+      setLeaderBoard((prev) =>
+        prev.map((row) =>
+          String(row.id) === String(selectedRow.id)
+            ? { ...row, name: nextName, email: nextEmail, type: nextType }
+            : row
+        )
+      );
+      setActiveSupervisors((prev) =>
+        prev.map((row) =>
+          String(row.id) === String(selectedRow.id)
+            ? {
+                ...row,
+                name: nextName,
+                email: nextEmail,
+                type: nextType === 'Voice' ? 'Voice Agent' : 'Chat Agent',
+              }
+            : row
+        )
+      );
+
+      toast.success('Supervisor updated successfully');
+      await loadSupervisors();
+      setEditModalOpen(false);
+      setSelectedRow(null);
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Failed to update supervisor');
+      throw err;
+    } finally {
+      setIsSavingEdit(false);
     }
-    setEditModalOpen(false);
-    setSelectedRow(null);
   };
 
-  const handleAddSubmit = async (data: { name: string; type: 'voice' | 'chat'; email: string }) => {
+  const handleAddSubmit = async (data: { name: string; type: 'voice' | 'chat'; email: string; password?: string }) => {
     setIsAdding(true);
     try {
-      const res = await supervisorsAPI.create({ email: data.email, password: 'TempPass123!', name: data.name, supervisor_type: data.type });
-      const newSup = res.data;
-      const newLeaderboard: LeaderboardSupervisor = {
-        id: newSup.id,
-        rank: leaderBoard.length + 1,
-        name: data.name || data.email,
-        type: data.type === 'voice' ? 'Voice' : 'Chat',
-        totalCalls: 0,
-        performance: 0,
-        avgTime: '0:00',
-      };
-      setLeaderBoard(prev => [...prev, newLeaderboard]);
-    } catch (err) {
-      console.error('Failed to create supervisor', err);
+      await supervisorsAPI.create({
+        email: data.email,
+        password: data.password || 'TempPass123!',
+        name: data.name,
+        supervisor_type: data.type,
+      });
+      toast.success('Supervisor created successfully');
+      await loadSupervisors();
+      setAddModalOpen(false);
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Failed to create supervisor');
+      throw err;
+    } finally {
+      setIsAdding(false);
     }
-    setIsAdding(false);
-    setAddModalOpen(false);
   };
 
   const totalActive = activeSupervisors.reduce((s, a) => s + a.activeCalls, 0);
@@ -716,13 +786,19 @@ const AdminDashboard: React.FC = () => {
         <MenuItem onClick={handleDeleteClick} sx={{ color: 'var(--action-danger)', fontWeight: 500 }}>Delete</MenuItem>
       </Menu>
 
-      <SupervisorFormModal open={addModalOpen} onClose={() => setAddModalOpen(false)} supervisor={null} onSubmit={handleAddSubmit} />
+      <SupervisorFormModal open={addModalOpen} onClose={() => setAddModalOpen(false)} supervisor={null} onSubmit={handleAddSubmit} loading={isAdding} />
       <SupervisorDetailsModal open={detailsModalOpen} onClose={() => { setDetailsModalOpen(false); setSelectedRow(null); }} supervisor={selectedRow} />
       <SupervisorFormModal
         open={editModalOpen}
         onClose={() => { setEditModalOpen(false); setSelectedRow(null); }}
-        supervisor={selectedRow ? { id: selectedRow.id, name: selectedRow.name, type: selectedRow.type.toLowerCase() as 'voice' | 'chat', email: `${selectedRow.name.toLowerCase().replace(' ', '.')}@company.com` } : null}
+        supervisor={selectedRow ? {
+          id: selectedRow.id,
+          name: selectedRow.name,
+          type: selectedRow.type === 'Voice' ? 'voice' : 'chat',
+          email: selectedRow.email,
+        } : null}
         onSubmit={handleEditSubmit}
+        loading={isSavingEdit}
       />
       <DeleteConfirmModal open={deleteModalOpen} onClose={() => { setDeleteModalOpen(false); setSelectedRow(null); }} onConfirm={handleDeleteConfirm} itemName={selectedRow?.name || ''} isDeleting={isDeleting} />
       <ActiveSupervisorModal open={activeSupModalOpen} onClose={() => { setActiveSupModalOpen(false); setActiveSup(null); }} supervisor={activeSup} />

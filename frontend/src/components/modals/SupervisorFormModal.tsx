@@ -14,6 +14,7 @@ import {
 } from '@mui/material';
 import { SelectChangeEvent } from '@mui/material/Select';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'react-toastify';
 
 interface SupervisorFormModalProps {
   open: boolean;
@@ -24,7 +25,8 @@ interface SupervisorFormModalProps {
     type: 'voice' | 'chat';
     email: string;
   } | null;
-  onSubmit: (data: { name: string; type: 'voice' | 'chat'; email: string; password?: string }) => void;
+  onSubmit: (data: { name: string; type: 'voice' | 'chat'; email: string; password?: string }) => void | Promise<void>;
+  loading?: boolean;
 }
 
 const SupervisorFormModal: React.FC<SupervisorFormModalProps> = ({
@@ -32,8 +34,10 @@ const SupervisorFormModal: React.FC<SupervisorFormModalProps> = ({
   onClose,
   supervisor = null,
   onSubmit,
+  loading = false,
 }) => {
   const isEdit = supervisor !== null;
+  const [submitting, setSubmitting] = React.useState(false);
 
   const [formData, setFormData] = React.useState({
     name: supervisor?.name || '',
@@ -63,15 +67,37 @@ const SupervisorFormModal: React.FC<SupervisorFormModalProps> = ({
     setFormData({ ...formData, type: event.target.value as 'voice' | 'chat' });
   };
 
-  const handleSubmit = () => {
-    onSubmit({
-      name: formData.name,
-      type: formData.type,
-      email: formData.email,
-      password: isEdit ? undefined : formData.password,
-    });
-    onClose();
+  const handleSubmit = async () => {
+    if (!formData.name.trim()) {
+      toast.warn('Please enter a supervisor name');
+      return;
+    }
+    if (!isEdit && !formData.email.trim()) {
+      toast.warn('Please enter an email address');
+      return;
+    }
+    if (!isEdit && !formData.password.trim()) {
+      toast.warn('Please enter a temporary password');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        name: formData.name.trim(),
+        type: formData.type,
+        email: formData.email.trim(),
+        password: isEdit ? undefined : formData.password,
+      });
+      onClose();
+    } catch {
+      // Parent shows error toast; keep modal open for corrections
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  const isBusy = loading || submitting;
 
   return (
     <AnimatePresence>
@@ -158,7 +184,7 @@ const SupervisorFormModal: React.FC<SupervisorFormModalProps> = ({
                       variant="outlined"
                       value={formData.email}
                       onChange={handleChange('email')}
-                      required
+                      required={!isEdit}
                       sx={{
                         '& .MuiOutlinedInput-root': {
                           color: 'var(--modal-text)',
@@ -203,6 +229,7 @@ const SupervisorFormModal: React.FC<SupervisorFormModalProps> = ({
                   <Button 
                     variant="contained" 
                     onClick={onClose}
+                    disabled={isBusy}
                     sx={{
                       bgcolor: 'var(--action-danger)',
                       color: '#ffffff',
@@ -214,13 +241,14 @@ const SupervisorFormModal: React.FC<SupervisorFormModalProps> = ({
                   <Button 
                     variant="contained" 
                     onClick={handleSubmit}
+                    disabled={isBusy}
                     sx={{
                       bgcolor: 'var(--action-primary)',
-                      color: '#ffffff',
+                      color: 'var(--text-inverse)',
                       '&:hover': { bgcolor: 'var(--action-primary-hover)' },
                     }}
                   >
-                    {isEdit ? 'Save Changes' : 'Add Supervisor'}
+                    {isBusy ? 'Saving...' : isEdit ? 'Save Changes' : 'Add Supervisor'}
                   </Button>
                 </Box>
               </Box>

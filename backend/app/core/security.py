@@ -6,11 +6,10 @@ from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from supabase import Client
 
 from app.api.v1.schemas.auth import AdminProfile, SupervisorProfile, UserResponse
 from app.core.constants import SupervisorType, UserRole
-from app.db.supabase import get_supabase_client
+from app.db.supabase import get_supabase_client, get_supabase_service_client
 
 # HTTP Bearer token scheme (manual error handling for 401 responses)
 security = HTTPBearer(auto_error=False)
@@ -58,11 +57,10 @@ async def get_current_user(
             detail="Missing authentication token",
         )
 
-    # 1. Verify token validity via Supabase Auth (using unauthenticated client for basic check)
+    # 1. Verify token validity via Supabase Auth
     try:
-        # We fetch the client here BEFORE setting JWT just to verify the token itself
         auth_client = get_supabase_client()
-        response = auth_client.auth.get_user(token)
+        response = auth_client.auth.get_user(jwt=token)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -85,12 +83,11 @@ async def get_current_user(
     from app.db.supabase import request_jwt
     request_jwt.set(token)
 
-    # 3. Get an AUTHENTICATED client that respects RLS (userID = auth.uid())
-    supabase: Client = get_supabase_client()
+    # 3. Resolve role via service client (avoids RLS blocking auth/me during login)
+    supabase_admin = get_supabase_service_client()
 
-    # Check admin role (RLS: admin can see their own row)
     admin_result = (
-        supabase.table("admin")
+        supabase_admin.table("admin")
         .select("created_at")
         .eq("userID", user_id_str)
         .limit(1)
@@ -109,10 +106,9 @@ async def get_current_user(
             profile=profile,
         )
 
-    # Check supervisor role (RLS: supervisor can see their own row)
     supervisor_result = (
-        supabase.table("supervisors")
-        .select("supervisor_type, created_at")
+        supabase_admin.table("supervisors")
+        .select("supervisor_type, created_at, name")
         .eq("userID", user_id_str)
         .limit(1)
         .execute()
@@ -129,7 +125,7 @@ async def get_current_user(
             )
 
         profile = SupervisorProfile(
-            name=display_name,
+            name=supervisor_row.get("name") or display_name,
             supervisor_type=supervisor_enum,
             created_at=_parse_datetime(supervisor_row.get("created_at")),
         )
@@ -142,5 +138,5 @@ async def get_current_user(
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="User role not found",
+        detail="User role not found. Ask an admin to link your account in the system.",
     )

@@ -99,7 +99,7 @@ class BaseRepository(Generic[T]):
         """
         try:
             # Convert Pydantic model to dict, excluding None values
-            data_dict = data.model_dump(exclude_none=True)
+            data_dict = data.model_dump(exclude_none=True, mode="json")
 
             response = (
                 self.client.table(self.table_name)
@@ -131,7 +131,7 @@ class BaseRepository(Generic[T]):
         """
         try:
             # Convert Pydantic model to dict, excluding None values
-            data_dict = data.model_dump(exclude_none=True)
+            data_dict = data.model_dump(exclude_none=True, mode="json")
 
             response = (
                 self.client.table(self.table_name)

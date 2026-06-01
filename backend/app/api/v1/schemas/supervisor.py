@@ -15,8 +15,10 @@ class SupervisorResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    email: str | None = None
     name: str
     supervisor_type: SupervisorType
+    agent_count: int = 0
     performance_score: float | None = None
     total_interactions: int = 0
     created_at: datetime
@@ -29,6 +31,7 @@ class SupervisorDetailResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    email: str | None = None
     name: str
     supervisor_type: SupervisorType
     performance_score: float | None = None
@@ -84,6 +87,7 @@ class SupervisorUpdate(BaseModel):
     """Schema for updating a supervisor (admin only)."""
 
     name: str | None = None
+    email: str | None = None
     supervisor_type: SupervisorType | None = None
     performance_score: float | None = None
     total_interactions: int | None = None

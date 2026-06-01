@@ -67,7 +67,7 @@ async def create_agent(
     """
     agent_type = AgentType.VOICE
     if request.agent_type:
-        agent_type = AgentType(request.agent_type)
+        agent_type = request.agent_type
     elif hasattr(current_user.profile, "supervisor_type"):
         agent_type = AgentType(current_user.profile.supervisor_type.value)
 

@@ -32,7 +32,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [userId, setUserId] = useState<string | null>(null);
 
   // Fetch user profile from backend
-  const fetchProfile = async (): Promise<boolean> => {
+  const fetchProfile = async (): Promise<{ ok: boolean; error?: string }> => {
     try {
       const res = await api.get('/auth/me');
       // The backend returns { id, role, email, profile: { supervisor_type, ... } }
@@ -45,10 +45,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setSupervisorType(supType);
       }
       setIsLoggedIn(true);
-      return true;
-    } catch {
+      return { ok: true };
+    } catch (err: unknown) {
       setIsLoggedIn(false);
-      return false;
+      const axiosErr = err as { response?: { data?: { detail?: unknown }; status?: number }; code?: string; message?: string };
+      const detail = axiosErr?.response?.data?.detail;
+      let message = 'Failed to load profile.';
+      if (typeof detail === 'string' && detail.trim()) {
+        message = detail;
+      } else if (!axiosErr.response) {
+        message = 'Cannot reach the API server. Make sure the backend is running on http://localhost:8000.';
+      }
+      return { ok: false, error: message };
     }
   };
 
@@ -60,7 +68,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session && !resolved) {
-          await fetchProfile();
+          const profile = await fetchProfile();
+          if (!profile.ok) {
+            await supabase.auth.signOut();
+          }
         }
       } catch {
         // Supabase unreachable — proceed to login
@@ -110,8 +121,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) return { success: false, error: error.message };
-      const ok = await fetchProfile();
-      if (!ok) return { success: false, error: 'Failed to load profile.' };
+      const profile = await fetchProfile();
+      if (!profile.ok) {
+        await supabase.auth.signOut();
+        return { success: false, error: profile.error || 'Failed to load profile.' };
+      }
       return { success: true };
     } catch (err: unknown) {
       return { success: false, error: err?.message || 'Login failed' };
