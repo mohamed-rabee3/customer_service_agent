@@ -24,18 +24,14 @@ class TelegramWebhookService:
         Returns:
             Full webhook URL
         """
-        # Get domain from settings - should be set in .env as WEBHOOK_DOMAIN
-        # Pydantic maps environment variables to the lowercase attributes defined in Settings
-        domain = getattr(settings, 'webhook_domain', None)
-        
-        if not domain:
-            logger.warning("⚠️  webhook_domain not set in settings. Cannot auto-configure webhook.")
+        base = settings.resolved_telegram_webhook_v1_base()
+        if not base:
+            logger.warning(
+                "WEBHOOK_DOMAIN or TELEGRAM_WEBHOOK_BASE_URL not set — "
+                "cannot auto-configure Telegram webhook."
+            )
             return None
-        
-        # Remove trailing slash if present
-        domain = domain.rstrip('/')
-        
-        return f"{domain}/v1/telegram/{agent_id}"
+        return f"{base}/telegram/{agent_id}"
     
     @staticmethod
     async def set_webhook(bot_token: str, agent_id: UUID) -> bool:

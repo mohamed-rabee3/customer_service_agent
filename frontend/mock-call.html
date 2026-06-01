@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Customer Service - Mock Dialer</title>
-    <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.15.7/dist/livekit-client.umd.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -439,6 +439,24 @@
             el.scrollTop = el.scrollHeight;
         }
 
+        function normalizeLiveKitUrl(url) {
+            if (!url) throw new Error('API did not return livekit_url');
+            let u = String(url).trim().replace(/\/$/, '');
+            if (u.startsWith('https://')) u = 'wss://' + u.slice(8);
+            if (u.startsWith('http://')) u = 'ws://' + u.slice(7);
+            if (!u.startsWith('ws://') && !u.startsWith('wss://')) {
+                throw new Error(`Invalid LiveKit URL (need ws/wss): ${u}`);
+            }
+            return u;
+        }
+
+        function formatConnectError(err) {
+            const parts = [err?.message || String(err)];
+            if (err?.reason) parts.push(`reason=${err.reason}`);
+            if (err?.code) parts.push(`code=${err.code}`);
+            return parts.join(' — ');
+        }
+
         function setStatus(text, dotClass = '') {
             document.getElementById('statusText').textContent = text;
             const dot = document.getElementById('statusDot');
@@ -451,6 +469,10 @@
             const min = String(Math.floor(elapsed / 60)).padStart(2, '0');
             const sec = String(elapsed % 60).padStart(2, '0');
             document.getElementById('timer').textContent = `${min}:${sec}`;
+        }
+
+        if (window.location.protocol === 'file:') {
+            log('Open this page via http:// (e.g. Live Server or Vite), not as a file:// URL.', 'error');
         }
 
         async function startCall() {
@@ -508,9 +530,17 @@
                     muteBtn.disabled = false;
                 });
 
+                room.on(LivekitClient.RoomEvent.ConnectionStateChanged, (state) => {
+                    log(`Connection state: ${state}`, 'info');
+                });
+
                 room.on(LivekitClient.RoomEvent.Disconnected, (reason) => {
-                    log(`Disconnected: ${reason || 'unknown'}`, 'error');
+                    log(`Disconnected: ${reason ?? 'unknown'}`, 'error');
                     resetUI();
+                });
+
+                room.on(LivekitClient.RoomEvent.Reconnecting, () => {
+                    log('Reconnecting to LiveKit...', 'info');
                 });
 
                 room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, pub, participant) => {
@@ -529,16 +559,40 @@
                     log(`${participant.identity} left`, 'info');
                 });
 
-                // Connect with audio enabled
-                const livekitUrl = data.livekit_url.replace('wss://', 'wss://');
-                await room.connect(livekitUrl, data.livekit_token);
+                const livekitUrl = normalizeLiveKitUrl(data.livekit_url);
+                log(`LiveKit server: ${livekitUrl}`, 'info');
 
-                // Enable microphone
+                try {
+                    await room.prepareConnection(livekitUrl, data.livekit_token);
+                    log('Signal preconnect OK', 'success');
+                } catch (prepErr) {
+                    log(`Signal preconnect: ${prepErr.message}`, 'info');
+                }
+
+                await room.connect(livekitUrl, data.livekit_token, {
+                    autoSubscribe: true,
+                });
+
                 await room.localParticipant.setMicrophoneEnabled(true);
                 log('Microphone enabled', 'success');
 
             } catch (err) {
-                log(`Error: ${err.message}`, 'error');
+                log(`Error: ${formatConnectError(err)}`, 'error');
+                const msg = (err?.message || '').toLowerCase();
+                if (msg.includes('bandwidth usage exceeded')) {
+                    log(
+                        'LiveKit Cloud bandwidth quota is exceeded for this project. ' +
+                        'Open https://cloud.livekit.io → your project → Plans / Usage, ' +
+                        'then upgrade the plan or wait for the billing period to reset.',
+                        'error'
+                    );
+                } else if (/websocket|signal connection/i.test(err?.message || '')) {
+                    log(
+                        'Browser could not reach LiveKit (wss). Try Chrome, disable ad-blockers/VPN, ' +
+                        'allow WebRTC, and confirm firewall permits wss to *.livekit.cloud.',
+                        'error'
+                    );
+                }
                 setStatus('Failed', '');
                 callBtn.disabled = false;
                 timerEl.className = 'timer';

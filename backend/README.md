@@ -77,7 +77,31 @@ SECRET_KEY=your-secret-key-here
 - `__pycache__/` - Python cache (already in `.gitignore`)
 - Any files with API keys or passwords
 
-### Step 6: Run the Application
+### Step 6: Vertex AI voice agent (Gemini Live on GCP)
+
+The voice worker uses **Vertex AI** by default so usage bills to your **GCP project** (including the $300 free trial). AI Studio API keys (`GEMINI_API_KEY`) are not used when `GEMINI_USE_VERTEX=true`.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create or select a project with billing (free trial is fine).
+2. Enable **Vertex AI API** for that project.
+3. Create a service account with role **Vertex AI User**, download JSON, or run:
+   ```bash
+   gcloud auth application-default login
+   ```
+4. In `backend/.env` set:
+   ```bash
+   GEMINI_USE_VERTEX=true
+   GOOGLE_CLOUD_PROJECT=your-project-id
+   GOOGLE_CLOUD_LOCATION=us-central1
+   GOOGLE_APPLICATION_CREDENTIALS=C:\path\to\key.json
+   GEMINI_REALTIME_MODEL=gemini-live-2.5-flash-native-audio
+   VOICE_PIPELINE=gemini
+   ```
+5. Start the voice worker:
+   ```bash
+   python -m app.agents.voice_session_manager dev
+   ```
+
+### Step 7: Run the Application
 
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

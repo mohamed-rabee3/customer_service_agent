@@ -15,11 +15,14 @@ import logging
 import os
 
 from dotenv import load_dotenv
+from google.genai import types as genai_types
 from livekit import agents, rtc
 from livekit.agents import AgentServer, AgentSession, room_io
 from livekit.agents.llm import ChatMessage
 from livekit.agents.voice.events import ConversationItemAddedEvent
+# Plugin imports must run at module load (main thread), not inside the job entrypoint.
 from livekit.plugins import elevenlabs, groq, silero
+from livekit.plugins.google.beta import realtime as google_realtime
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from app.agents.base_agent import (
@@ -37,13 +40,227 @@ from app.core.constants import AgentStatus
 # Load environment variables
 load_dotenv()
 
-# Set API keys so plugins auto-discover them
 from app.core.config import settings
-os.environ.setdefault("GROQ_API_KEY", settings.groq_api_key)
-os.environ.setdefault("ELEVEN_API_KEY", settings.elevenlabs_api_key)
 
 logger = logging.getLogger("agent-runner")
 logging.basicConfig(level=logging.INFO)
+
+_VERTEX_SETUP_HELP = (
+    "Vertex AI voice requires GOOGLE_CLOUD_PROJECT and GCP credentials. "
+    "1) Enable Vertex AI API on your GCP project (uses $300 trial / GCP billing). "
+    "2) Set GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION in backend/.env. "
+    "3) Auth: GOOGLE_APPLICATION_CREDENTIALS=<service-account.json> "
+    "   or run: gcloud auth application-default login"
+)
+_OAUTH_CLIENT_SECRET_HELP = (
+    "GOOGLE_APPLICATION_CREDENTIALS points to an OAuth client secret "
+    "(client_secret_*.json), not a service account key. "
+    "In GCP Console: IAM & Admin → Service Accounts → your account → Keys → "
+    "Add key → JSON. That file must contain \"type\": \"service_account\". "
+    "Or remove GOOGLE_APPLICATION_CREDENTIALS and run: "
+    "gcloud auth application-default login"
+)
+
+
+def _validate_vertex_credentials_file() -> str | None:
+    """Return an error message if GOOGLE_APPLICATION_CREDENTIALS is the wrong JSON kind."""
+    creds_path = (settings.google_application_credentials or "").strip()
+    if not creds_path:
+        return None
+    path = os.path.abspath(creds_path)
+    if not os.path.isfile(path):
+        return f"Credentials file not found: {path}"
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        return f"Credentials file is not valid JSON: {path}"
+    cred_type = data.get("type")
+    if cred_type == "service_account":
+        return None
+    if "web" in data or "installed" in data or "client_secret" in str(data.get("web", data)):
+        return _OAUTH_CLIENT_SECRET_HELP
+    if cred_type is None:
+        return _OAUTH_CLIENT_SECRET_HELP
+    return (
+        f"Unsupported credentials type {cred_type!r} in {path}. "
+        'Expected a service account JSON with "type": "service_account".'
+    )
+
+
+def _configure_vertex_env() -> None:
+    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"
+    project = (settings.google_cloud_project or "").strip()
+    location = (settings.google_cloud_location or "us-central1").strip()
+    if project:
+        os.environ["GOOGLE_CLOUD_PROJECT"] = project
+    if location:
+        os.environ["GOOGLE_CLOUD_LOCATION"] = location
+    creds_path = (settings.google_application_credentials or "").strip()
+    if creds_path:
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds_path
+    for env_name in ("GOOGLE_API_KEY", "GEMINI_API_KEY"):
+        if os.environ.get(env_name):
+            logger.warning(
+                "Clearing %s — Vertex uses GCP credentials, not AI Studio keys.",
+                env_name,
+            )
+            os.environ.pop(env_name, None)
+
+
+def _configure_ai_studio_env() -> None:
+    os.environ.pop("GOOGLE_GENAI_USE_VERTEXAI", None)
+    key = (settings.gemini_api_key or "").strip()
+    if key:
+        os.environ["GOOGLE_API_KEY"] = key
+        os.environ["GEMINI_API_KEY"] = key
+
+
+if settings.gemini_use_vertex:
+    _configure_vertex_env()
+else:
+    _configure_ai_studio_env()
+
+if settings.groq_api_key:
+    os.environ.setdefault("GROQ_API_KEY", settings.groq_api_key)
+if settings.elevenlabs_api_key:
+    os.environ.setdefault("ELEVEN_API_KEY", settings.elevenlabs_api_key)
+
+
+def _use_legacy_voice_pipeline() -> bool:
+    return (settings.voice_pipeline or "gemini").strip().lower() == "legacy"
+
+
+def _vertex_accessible() -> bool:
+    project = (settings.google_cloud_project or "").strip()
+    if not project:
+        logger.error("GOOGLE_CLOUD_PROJECT is not set.")
+        return False
+    creds_err = _validate_vertex_credentials_file()
+    if creds_err:
+        logger.error("%s", creds_err)
+        return False
+    location = (settings.google_cloud_location or "us-central1").strip()
+    try:
+        from google import genai
+
+        client = genai.Client(vertexai=True, project=project, location=location)
+        client.models.generate_content(
+            model=settings.gemini_vertex_healthcheck_model,
+            contents="ping",
+        )
+        return True
+    except Exception as e:
+        err = str(e)
+        if "valid type" in err or "service_account" in err:
+            logger.error("%s Details: %s", _OAUTH_CLIENT_SECRET_HELP, err[:300])
+        elif "NOT_FOUND" in err and "Publisher Model" in err:
+            logger.error(
+                "Vertex AI health check model %r not found in %s. "
+                "Set GEMINI_VERTEX_HEALTHCHECK_MODEL (e.g. gemini-2.5-flash) "
+                "or enable Vertex AI API on the project. Details: %s",
+                settings.gemini_vertex_healthcheck_model,
+                location,
+                err[:300],
+            )
+        else:
+            logger.error("Vertex AI check failed: %s", err[:500])
+        return False
+
+
+def _ai_studio_accessible() -> bool:
+    key = (settings.gemini_api_key or "").strip()
+    if not key:
+        logger.error("GEMINI_API_KEY is not set (GEMINI_USE_VERTEX=false).")
+        return False
+    try:
+        from google import genai
+
+        client = genai.Client(api_key=key)
+        client.models.generate_content(model="gemini-2.0-flash", contents="ping")
+        return True
+    except Exception as e:
+        logger.error("Gemini API check failed: %s", str(e)[:500])
+        return False
+
+
+def _build_realtime_model() -> google_realtime.RealtimeModel:
+    transcription = genai_types.AudioTranscriptionConfig()
+    common = dict(
+        model=settings.gemini_realtime_model,
+        voice=settings.gemini_voice,
+        temperature=0.6,
+        input_audio_transcription=transcription,
+        output_audio_transcription=transcription,
+    )
+    if settings.gemini_use_vertex:
+        return google_realtime.RealtimeModel(
+            **common,
+            vertexai=True,
+            project=settings.google_cloud_project,
+            location=settings.google_cloud_location or "us-central1",
+        )
+    return google_realtime.RealtimeModel(
+        **common,
+        vertexai=False,
+        api_key=settings.gemini_api_key,
+    )
+
+
+def _build_agent_session() -> AgentSession:
+    if _use_legacy_voice_pipeline():
+        logger.info("Voice pipeline: legacy (Groq + ElevenLabs)")
+        return AgentSession(
+            stt=groq.STT(
+                model="whisper-large-v3-turbo",
+                api_key=settings.groq_api_key,
+                language="en",
+            ),
+            llm=groq.LLM(
+                model="openai/gpt-oss-120b",
+                api_key=settings.groq_api_key,
+                temperature=0.6,
+            ),
+            tts=elevenlabs.TTS(
+                voice_id=settings.elevenlabs_voice_id,
+                model=settings.elevenlabs_model,
+                api_key=settings.elevenlabs_api_key,
+                streaming_latency=4,
+                enable_ssml_parsing=False,
+            ),
+            vad=silero.VAD.load(),
+            turn_detection=MultilingualModel(),
+        )
+
+    if settings.gemini_use_vertex and not _vertex_accessible():
+        raise RuntimeError(_VERTEX_SETUP_HELP)
+    if not settings.gemini_use_vertex and not _ai_studio_accessible():
+        raise RuntimeError("GEMINI_API_KEY invalid or blocked.")
+
+    backend = "Vertex AI" if settings.gemini_use_vertex else "AI Studio"
+    logger.info(
+        "Voice pipeline: gemini realtime (%s, model=%s)",
+        backend,
+        settings.gemini_realtime_model,
+    )
+    return AgentSession(llm=_build_realtime_model())
+
+
+if not _use_legacy_voice_pipeline():
+    if settings.gemini_use_vertex:
+        creds_err = _validate_vertex_credentials_file()
+        if creds_err:
+            raise SystemExit(creds_err)
+        if not _vertex_accessible():
+            raise SystemExit(_VERTEX_SETUP_HELP)
+        logger.info(
+            "Voice worker ready: Vertex AI project=%s location=%s model=%s",
+            settings.google_cloud_project,
+            settings.google_cloud_location,
+            settings.gemini_realtime_model,
+        )
+    elif not _ai_studio_accessible():
+        raise SystemExit("GEMINI_API_KEY invalid. Set GEMINI_USE_VERTEX=true for GCP billing.")
 
 # Create the agent server
 server = AgentServer()
@@ -152,28 +369,7 @@ async def entrypoint(ctx: agents.JobContext):
         interaction_id=str(interaction_id) if interaction_id else "",
     )
 
-    # Configure the AgentSession with STT/LLM/TTS pipeline
-    session = AgentSession(
-        stt=groq.STT(
-            model="whisper-large-v3-turbo",
-            api_key=settings.groq_api_key,
-            language="en",
-        ),
-        llm=groq.LLM(
-            model="openai/gpt-oss-120b",
-            api_key=settings.groq_api_key,
-            temperature=0.6,
-        ),
-        tts=elevenlabs.TTS(
-            voice_id=settings.elevenlabs_voice_id,
-            model=settings.elevenlabs_model,
-            api_key=settings.elevenlabs_api_key,
-            streaming_latency=4,
-            enable_ssml_parsing=False,
-        ),
-        vad=silero.VAD.load(),
-        turn_detection=MultilingualModel(),
-    )
+    session = _build_agent_session()
 
     # Serialize whisper handling so overlapping say()/generate_reply() cannot interleave.
     whisper_lock = asyncio.Lock()
@@ -326,10 +522,18 @@ async def _handle_whisper(
 
     async with lock:
         try:
-            await session.say(
-                "I'm sorry — can you be with me for a second?",
-                allow_interruptions=False,
-            )
+            if _use_legacy_voice_pipeline():
+                await session.say(
+                    "I'm sorry — can you be with me for a second?",
+                    allow_interruptions=False,
+                )
+            else:
+                await session.generate_reply(
+                    instructions=(
+                        "Politely ask the customer to wait one moment. "
+                        "Keep it brief; do not mention supervisors."
+                    )
+                )
 
             current = agent.instructions or ""
             merged = (

@@ -190,7 +190,7 @@ const VoiceAgentMonitoring: React.FC = () => {
 
       <AgentDetailModal agent={selectedAgent} onClose={() => setSelectedAgent(null)} />
 
-      <InjectBox agents={agents} label="inject" />
+      <InjectBox agents={agents} label="inject" mode="voice" />
     </div>
   );
 };

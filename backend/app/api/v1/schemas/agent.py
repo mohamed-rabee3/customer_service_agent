@@ -120,3 +120,25 @@ class AgentDetailResponse(BaseModel):
     updated_at: datetime
     current_interaction: dict[str, Any] | None = None
     analytics: dict[str, Any] | None = None
+
+
+class AgentWhisperRequest(BaseModel):
+    """Supervisor instruction injected during an active voice/chat call."""
+
+    instructions: str = Field(
+        ..., min_length=1, max_length=2000,
+        description="Instruction for the agent to follow",
+    )
+
+
+class AgentWhisperResponse(BaseModel):
+    """Response after sending a whisper to an agent via LiveKit."""
+
+    whisper_id: str
+    agent_id: str
+    agent_status: str
+    paused_at: str
+    instructions_sent: bool
+    acknowledged: bool
+    acknowledged_at: str
+    resumed_at: str | None = None

@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from app.api.v1.schemas.supervisor import SupervisorCreate, SupervisorUpdate
 from app.core.constants import SupervisorType, UserRole
 from app.core.exceptions import ForbiddenException, NotFoundException
+<<<<<<< HEAD
 from app.core.auth_emails import (
     get_auth_profiles_for_user_ids,
     get_display_name_for_user_id,
@@ -15,6 +16,9 @@ from app.core.auth_emails import (
     get_emails_for_user_ids,
 )
 from app.db.supabase import get_supabase_service_client
+=======
+from app.db.supabase import get_supabase_client, get_supabase_service_client, run_supabase_request
+>>>>>>> b09ce7ab6a868db1a2bb87739d2182549f135ae9
 from app.repositories.supervisor_repository import SupervisorModel, supervisor_repository
 
 
@@ -22,22 +26,21 @@ def get_supervisor_dashboard(supervisor_id: UUID) -> dict:
     """
     Get dashboard data for a supervisor.
     """
-    # Verify supervisor exists
-    supervisor = supervisor_repository.get_by_id(supervisor_id)
-    if supervisor is None:
-        raise NotFoundException("Supervisor not found")
 
-    # So mock-phone / POST interactions only route to this supervisor's idle agents
-    # while they have the app open (dashboard polling).
-    supervisor_repository.touch_monitoring_presence(supervisor_id)
+    def _load() -> dict:
+        supervisor = supervisor_repository.get_by_id(supervisor_id)
+        if supervisor is None:
+            raise NotFoundException("Supervisor not found")
 
-    # Get aggregated dashboard data efficiently
-    enriched_agents = supervisor_repository.get_dashboard_data(supervisor_id)
+        supervisor_repository.touch_monitoring_presence(supervisor_id)
+        enriched_agents = supervisor_repository.get_dashboard_data(supervisor_id)
 
-    return {
-        "agents": enriched_agents,
-        "total": len(enriched_agents),
-    }
+        return {
+            "agents": enriched_agents,
+            "total": len(enriched_agents),
+        }
+
+    return run_supabase_request(_load)
 
 
 def list_supervisors(

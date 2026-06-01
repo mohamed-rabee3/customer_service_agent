@@ -16,7 +16,7 @@ from app.api.v1.schemas.interaction import (
     UpdateInteractionRequest,
 )
 from app.api.v1.schemas.agent import AgentResponse
-from app.core.constants import InteractionStatus, UserRole
+from app.core.constants import AgentStatus, InteractionStatus, InteractionType, UserRole
 from app.core.exceptions import ForbiddenException
 from app.services.interaction_service import InteractionService
 
@@ -40,17 +40,17 @@ async def create_interaction(
         phone_number=body.phone_number,
     )
     agent = result["agent"]
+    new_status = (
+        AgentStatus.IN_CALL
+        if body.interaction_type == InteractionType.VOICE
+        else AgentStatus.IN_CHAT
+    )
+    agent_response = AgentResponse.model_validate(agent.model_dump())
+    agent_response = agent_response.model_copy(update={"status": new_status})
 
     return CreateInteractionResponse(
         interaction_id=result["interaction_id"],
-        agent=AgentResponse(
-            id=agent.id,
-            name=agent.name,
-            agent_type=agent.agent_type.value,
-            status="in_call" if body.interaction_type.value == "voice" else "in_chat",
-            tools=[],
-            created_at=agent.created_at,
-        ),
+        agent=agent_response,
         livekit_token=result["livekit_token"],
         livekit_url=result["livekit_url"],
     )

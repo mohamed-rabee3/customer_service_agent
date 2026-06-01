@@ -4,6 +4,7 @@ import { Send, ChevronDown, Check } from 'lucide-react';
 import { toast } from 'react-toastify';
 import AgentAvatar from './AgentAvatar';
 import { chatAPI } from '@/services/chatService';
+import { agentsAPI } from '@/services/agentsService';
 
 interface Agent {
   id: string;
@@ -15,11 +16,15 @@ interface Agent {
 interface InjectBoxProps {
   agents: Agent[];
   label?: string;
+  /** voice = LiveKit whisper via agent id; chat = session whisper API */
+  mode?: 'voice' | 'chat';
 }
 
-const InjectBox: React.FC<InjectBoxProps> = ({ agents, label = 'inject' }) => {
+const ACTIVE_VOICE_STATUSES = new Set(['in_call', 'in_chat', 'paused']);
+
+const InjectBox: React.FC<InjectBoxProps> = ({ agents, label = 'inject', mode = 'chat' }) => {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [selectedAgentName, setSelectedAgentName] = useState(agents[0]?.name || 'Agent 1');
+  const [selectedAgentName, setSelectedAgentName] = useState('');
   const [text, setText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -29,6 +34,18 @@ const InjectBox: React.FC<InjectBoxProps> = ({ agents, label = 'inject' }) => {
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Keep selected agent in sync when the agents list loads or changes
+  useEffect(() => {
+    if (agents.length === 0) return;
+    const stillValid = agents.some(a => a.name === selectedAgentName);
+    if (stillValid) return;
+    const preferred =
+      mode === 'voice'
+        ? agents.find(a => ACTIVE_VOICE_STATUSES.has(a.status)) ?? agents[0]
+        : agents.find(a => a.session_id) ?? agents[0];
+    setSelectedAgentName(preferred.name);
+  }, [agents, mode, selectedAgentName]);
 
   // Calculate position when menu opens
   const updateMenuPos = useCallback(() => {
@@ -70,22 +87,36 @@ const InjectBox: React.FC<InjectBoxProps> = ({ agents, label = 'inject' }) => {
   const handleInject = async () => {
     if (!text.trim()) { toast.warn('Please enter a message first'); return; }
     const selectedAgent = agents.find(a => a.name === selectedAgentName);
-    if (!selectedAgent?.session_id) {
+    if (!selectedAgent) {
+      toast.warn('Select an agent first');
+      return;
+    }
+    if (mode === 'voice') {
+      if (!ACTIVE_VOICE_STATUSES.has(selectedAgent.status)) {
+        toast.warn(`${selectedAgentName} is not in an active call`);
+        return;
+      }
+    } else if (!selectedAgent.session_id) {
       toast.warn(`${selectedAgentName} has no active chat session`);
       return;
     }
     setIsSending(true);
     try {
-      await chatAPI.whisper(selectedAgent.session_id, text.trim());
+      if (mode === 'voice') {
+        await agentsAPI.whisper(selectedAgent.id, text.trim());
+      } else {
+        await chatAPI.whisper(selectedAgent.session_id!, text.trim());
+      }
       setIsSending(false);
       setIsSuccess(true);
       setIsVaporizing(true);
       toast.success(`Sent to ${selectedAgentName}: "${text.trim()}"`);
       setTimeout(() => { setText(''); setIsVaporizing(false); }, 500);
       setTimeout(() => setIsSuccess(false), 1200);
-    } catch (err) {
+    } catch (err: unknown) {
       setIsSending(false);
-      toast.error('Failed to send instruction');
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Failed to send instruction');
     }
   };
 
@@ -173,7 +204,7 @@ const InjectBox: React.FC<InjectBoxProps> = ({ agents, label = 'inject' }) => {
           className="flex items-center gap-2 cursor-pointer bg-transparent border-none"
           style={{ fontSize: '1.8rem', fontWeight: 900, color: 'var(--primary)' }}
         >
-          {selectedAgentName}
+          {selectedAgentName || agents[0]?.name || 'Select agent'}
           <span style={{
             display: 'inline-flex',
             transition: 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',

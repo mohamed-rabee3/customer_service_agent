@@ -46,4 +46,8 @@ export const agentsAPI = {
 
   delete: (id: string) =>
     api.delete(`/agents/${id}`),
+
+  /** POST /agents/{id}/whisper — LiveKit instruction during active call/chat */
+  whisper: (id: string, instructions: string) =>
+    api.post(`/agents/${id}/whisper`, { instructions }),
 };
