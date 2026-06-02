@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     elevenlabs_voice_id: str = "EXAVITQu4vr4xnSDxMaL"
     elevenlabs_model: str = "eleven_flash_v2_5"  # ~75ms latency, realtime
 
+    # Chat sessions: auto-close and set agent idle after this many seconds without messages
+    chat_idle_timeout_seconds: int = 120
+
     # Telegram Bot Configuration
     telegram_bot_token: str = ""  # Optional default; per-agent token in DB is preferred
     webhook_domain: str = ""  # Public base URL, e.g. https://abc.ngrok-free.app

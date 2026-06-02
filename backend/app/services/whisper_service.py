@@ -4,7 +4,8 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from app.core.constants import AgentStatus
+from app.agents.chat_session_manager import apply_chat_whisper
+from app.core.constants import AgentStatus, AgentType
 from app.core.exceptions import NotFoundException, ValidationException
 from app.livekit import room_manager
 from app.repositories.agent_repository import AgentRepository
@@ -55,13 +56,31 @@ class WhisperService:
                 raise ValidationException("Agent is already paused")
             raise ValidationException("Agent is not in active call or chat")
 
-        # Get the active interaction to find the room
         interaction = self.interaction_repo.get_active_by_agent(agent_id)
         if not interaction:
             raise ValidationException("Agent has no active interaction")
 
         whisper_id = str(uuid4())
         paused_at = datetime.now(timezone.utc)
+
+        # Chat agents: inject into in-memory session (Telegram / web / WhatsApp)
+        if agent.agent_type == AgentType.CHAT or agent.status == AgentStatus.IN_CHAT:
+            try:
+                await apply_chat_whisper(interaction.id, instructions)
+            except ValueError as e:
+                raise ValidationException(str(e)) from e
+            acknowledged_at = datetime.now(timezone.utc)
+            logger.info("Whisper %s sent to chat agent %s (session %s)", whisper_id, agent_id, interaction.id)
+            return {
+                "whisper_id": whisper_id,
+                "agent_id": str(agent_id),
+                "agent_status": agent.status.value,
+                "paused_at": paused_at.isoformat(),
+                "instructions_sent": True,
+                "acknowledged": True,
+                "acknowledged_at": acknowledged_at.isoformat(),
+                "resumed_at": None,
+            }
 
         room_name = await room_manager.resolve_livekit_room_name(
             interaction.call_source_id,

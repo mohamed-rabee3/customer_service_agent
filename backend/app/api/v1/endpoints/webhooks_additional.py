@@ -7,6 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Path, Request, status
 
+from app.agents.chat_live_metrics import ChatLiveMetricsTracker
 from app.agents.chat_session_manager import ChatSessionManager
 from app.core.constants import AgentStatus, InteractionStatus, InteractionType
 from app.db.supabase import get_supabase_service_client
@@ -16,29 +17,6 @@ from app.services.instagram_service import InstagramService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="", tags=["Webhooks"])
-
-
-async def analyze_and_metrics_background_task(session_id: UUID, chat_agent):
-    """Background task to run sentiment analysis and store metrics."""
-    try:
-        metrics = await chat_agent.analyze_sentiment()
-
-        db = get_supabase_service_client()
-        metrics_data = {
-            "interaction_id": str(session_id),
-            "sentiment": metrics["sentiment"],
-            "satisfaction_score": metrics["satisfaction_score"],
-            "feed_text": metrics["feed_text"],
-        }
-        db.table("realtime_metrics").insert(metrics_data).execute()
-
-        # Broadcast metrics to SSE subscribers (supervisors)
-        await ChatSessionManager.broadcast_event(session_id, {
-            "type": "metrics",
-            "data": metrics,
-        })
-    except Exception as e:
-        logger.error(f"Webhook sentiment analysis failed: {e}")
 
 
 # ==================== WHATSAPP WEBHOOK ====================
@@ -170,6 +148,8 @@ async def whatsapp_webhook(
         "role": "customer",
         "content": customer_text,
     }).execute()
+    ChatLiveMetricsTracker.append_line(interaction_id, "Customer", customer_text)
+    await ChatSessionManager.record_activity(interaction_id)
 
     await ChatSessionManager.broadcast_event(interaction_id, {
         "type": "message",
@@ -204,7 +184,7 @@ async def whatsapp_webhook(
             if success:
                 logger.info(f"✅ WhatsApp response sent")
 
-            await analyze_and_metrics_background_task(interaction_id, chat_agent)
+            ChatLiveMetricsTracker.append_line(interaction_id, "Agent", full_response)
         except Exception as e:
             logger.error(f"❌ Error processing WhatsApp: {e}", exc_info=True)
             await WhatsAppService.send_message(
@@ -213,6 +193,8 @@ async def whatsapp_webhook(
                 api_token=api_token,
                 provider=whatsapp_config.get("provider", "twilio")
             )
+        finally:
+            await ChatSessionManager.record_activity(interaction_id)
 
     background_tasks.add_task(process_whatsapp)
     return {"status": "processing"}
@@ -332,13 +314,13 @@ async def instagram_webhook(
         "role": "customer",
         "content": customer_text,
     }).execute()
+    ChatLiveMetricsTracker.append_line(interaction_id, "Customer", customer_text)
+    await ChatSessionManager.record_activity(interaction_id)
 
     await ChatSessionManager.broadcast_event(interaction_id, {
         "type": "message",
         "data": {"role": "customer", "content": customer_text, "created_at": now_ts},
     })
-
-    # TODO: Add post-chat summarization when session ends (similar to voice post-call processing)
 
     # Process in background
     async def process_instagram():
@@ -368,9 +350,11 @@ async def instagram_webhook(
             if success:
                 logger.info(f"✅ Instagram response sent")
 
-            await analyze_and_metrics_background_task(interaction_id, chat_agent)
+            ChatLiveMetricsTracker.append_line(interaction_id, "Agent", full_response)
         except Exception as e:
             logger.error(f"❌ Error processing Instagram: {e}", exc_info=True)
+        finally:
+            await ChatSessionManager.record_activity(interaction_id)
 
     background_tasks.add_task(process_instagram)
     return {"status": "processing"}

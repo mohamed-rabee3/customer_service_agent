@@ -37,30 +37,41 @@ class AgentRepository(BaseRepository[AgentModel]):
         """Initialize repository with specific table and model."""
         super().__init__(table_name="agents", model_class=AgentModel)
 
-    def count_by_supervisor(self, supervisor_id: UUID) -> int:
+    def count_by_supervisor(
+        self,
+        supervisor_id: UUID,
+        agent_type: AgentType | None = None,
+    ) -> int:
         """
-        Count the number of agents owned by a supervisor.
+        Count agents owned by a supervisor, optionally filtered by channel type.
         """
-        result = (
+        query = (
             self.client.table(self.table_name)
             .select("id", count="exact")
             .eq("supervisor_id", str(supervisor_id))
-            .execute()
         )
+        if agent_type is not None:
+            query = query.eq("agent_type", agent_type.value)
+        result = query.execute()
 
         return result.count if result.count is not None else 0
 
-    def get_by_supervisor(self, supervisor_id: UUID) -> list[AgentModel]:
+    def get_by_supervisor(
+        self,
+        supervisor_id: UUID,
+        agent_type: AgentType | None = None,
+    ) -> list[AgentModel]:
         """
-        Get all agents for a supervisor.
+        Get agents for a supervisor, optionally filtered by voice vs chat.
         """
-        result = (
+        query = (
             self.client.table(self.table_name)
             .select("*")
             .eq("supervisor_id", str(supervisor_id))
-            .order("created_at", desc=False)
-            .execute()
         )
+        if agent_type is not None:
+            query = query.eq("agent_type", agent_type.value)
+        result = query.order("created_at", desc=False).execute()
 
         return [self.model_class.model_validate(agent) for agent in result.data]
 

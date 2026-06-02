@@ -5,12 +5,12 @@ import json
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
-from app.agents.chat_session_manager import ChatSessionManager
-from app.api.deps import get_current_user
+from app.agents.chat_session_manager import ChatSessionManager, ensure_chat_session
 from app.api.v1.schemas.auth import UserResponse
+from app.core.security import get_current_user_flexible
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +29,7 @@ router = APIRouter(prefix="/chat", tags=["Chat SSE"])
 )
 async def stream_chat_events(
     session_id: UUID,
-    token: str | None = Query(None, description="JWT token (for EventSource which can't send headers)"),
-    current_user: UserResponse | None = Depends(get_current_user),
+    current_user: UserResponse = Depends(get_current_user_flexible),
 ):
     """
     SSE stream for real-time chat monitoring.
@@ -41,8 +40,7 @@ async def stream_chat_events(
     - whisper: Whisper confirmation { content, created_at }
     - status: Session state change { status: "ended" }
     """
-    # Verify the session exists
-    chat_agent = ChatSessionManager.get_session(session_id)
+    chat_agent = await ensure_chat_session(session_id)
     if not chat_agent:
         raise HTTPException(
             status_code=404,

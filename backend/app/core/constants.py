@@ -37,6 +37,7 @@ class InteractionStatus(str, Enum):
     ACTIVE = "active"
     COMPLETED = "completed"
     FAILED = "failed"
+    ABANDONED = "abandoned"
 
 
 # Supervisor Type

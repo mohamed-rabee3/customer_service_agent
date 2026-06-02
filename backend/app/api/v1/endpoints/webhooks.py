@@ -10,6 +10,7 @@ import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Path, Request, status
 from pydantic import ValidationError
 
+from app.agents.chat_live_metrics import ChatLiveMetricsTracker
 from app.agents.chat_session_manager import ChatSessionManager
 from app.api.v1.schemas.webhooks import TelegramUpdate
 from app.core.constants import AgentStatus, InteractionStatus, InteractionType
@@ -19,29 +20,6 @@ from app.db.supabase import get_supabase_client, get_supabase_service_client
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="", tags=["Webhooks"])
-
-
-async def analyze_and_metrics_background_task(session_id: UUID, chat_agent):
-    """Background task to run sentiment analysis and optionally store it."""
-    try:
-        metrics = await chat_agent.analyze_sentiment()
-        
-        db = get_supabase_service_client()
-        metrics_data = {
-            "interaction_id": str(session_id),
-            "sentiment": metrics["sentiment"],
-            "satisfaction_score": metrics["satisfaction_score"],
-            "feed_text": metrics["feed_text"],
-        }
-        db.table("realtime_metrics").insert(metrics_data).execute()
-        
-        # Broadcast metrics to SSE subscribers (supervisors)
-        await ChatSessionManager.broadcast_event(session_id, {
-            "type": "metrics",
-            "data": metrics,
-        })
-    except Exception as e:
-        logger.error(f"Telegram sentiment analysis failed: {e}")
 
 
 async def send_telegram_message(chat_id: int, text: str, bot_token: str):
@@ -190,6 +168,8 @@ async def telegram_webhook(
         "content": customer_text,
     }
     db.table("chat_messages").insert(customer_msg).execute()
+    ChatLiveMetricsTracker.append_line(interaction_id, "Customer", customer_text)
+    await ChatSessionManager.record_activity(interaction_id)
 
     # Broadcast to SSE
     await ChatSessionManager.broadcast_event(interaction_id, {
@@ -228,13 +208,13 @@ async def telegram_webhook(
 
             # Send Telegram Reply
             await send_telegram_message(chat_id, full_response, bot_token)
-            
-            # Run Sentiment Analysis
-            await analyze_and_metrics_background_task(interaction_id, chat_agent)
-            
+            ChatLiveMetricsTracker.append_line(interaction_id, "Agent", full_response)
+
         except Exception as e:
             logger.error(f"Error processing Telegram webhook message: {e}")
             await send_telegram_message(chat_id, "I apologize, but I am experiencing technical difficulties.", bot_token)
+        finally:
+            await ChatSessionManager.record_activity(interaction_id)
 
     # Schedule the processing in the background so Telegram gets an immediate 200 OK.
     background_tasks.add_task(process_and_send)

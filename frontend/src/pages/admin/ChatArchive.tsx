@@ -23,6 +23,7 @@ interface ChatLog {
   satisfaction: number;
   summary: string;
   tags: string[];
+  transcript?: string;
 }
 
 const statusColor = (s: string) => {
@@ -71,6 +72,7 @@ const ChatArchive: React.FC<ChatArchiveProps> = ({ variant = 'standalone' }) => 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [chatLogs, setChatLogs] = useState<ChatLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchArchives = async () => {
@@ -122,8 +124,41 @@ const ChatArchive: React.FC<ChatArchiveProps> = ({ variant = 'standalone' }) => 
     fetchArchives();
   }, []);
 
-  const toggleExpand = (id: string) => {
-    setExpandedId(prev => prev === id ? null : id);
+  const toggleExpand = async (id: string) => {
+    if (expandedId === id) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(id);
+    const existing = chatLogs.find((l) => l.id === id);
+    if (existing?.transcript?.trim()) return;
+
+    setDetailLoadingId(id);
+    try {
+      const res = await archivesAPI.getById(id);
+      const detail = res.data as Record<string, unknown>;
+      setChatLogs((prev) =>
+        prev.map((log) =>
+          log.id === id
+            ? {
+                ...log,
+                summary: String(detail.summary ?? log.summary),
+                satisfaction:
+                  Number(detail.overall_performance ?? detail.csat_score ?? log.satisfaction) ||
+                  log.satisfaction,
+                tags: Array.isArray(detail.tags)
+                  ? detail.tags.map((t) => String(t))
+                  : log.tags,
+                transcript: detail.transcript ? String(detail.transcript) : log.transcript,
+              }
+            : log,
+        ),
+      );
+    } catch (err) {
+      console.error('Failed to load archive detail', err);
+    } finally {
+      setDetailLoadingId(null);
+    }
   };
 
   const isSection = variant === 'section';
@@ -247,6 +282,43 @@ const ChatArchive: React.FC<ChatArchiveProps> = ({ variant = 'standalone' }) => 
                                 />
                               ))}
                             </Box>
+
+                            <Typography
+                              variant="caption"
+                              fontWeight={700}
+                              color="var(--text-muted)"
+                              sx={{ display: 'block', mt: 2, mb: 1, textTransform: 'uppercase', letterSpacing: '0.05em' }}
+                            >
+                              Conversation
+                            </Typography>
+                            {detailLoadingId === log.id ? (
+                              <Typography variant="body2" color="var(--text-muted)" fontStyle="italic">
+                                Loading transcript…
+                              </Typography>
+                            ) : log.transcript?.trim() ? (
+                              <Box
+                                component="pre"
+                                sx={{
+                                  m: 0,
+                                  p: 1.5,
+                                  borderRadius: 'var(--radius-md)',
+                                  bgcolor: 'var(--bg-dark)',
+                                  border: '1px solid var(--border)',
+                                  fontSize: '0.8rem',
+                                  lineHeight: 1.6,
+                                  whiteSpace: 'pre-wrap',
+                                  maxHeight: 220,
+                                  overflow: 'auto',
+                                  color: 'var(--text-secondary)',
+                                }}
+                              >
+                                {log.transcript}
+                              </Box>
+                            ) : (
+                              <Typography variant="body2" color="var(--text-muted)" fontStyle="italic">
+                                No transcript stored for this session.
+                              </Typography>
+                            )}
                           </Box>
                         </Box>
                       </Box>

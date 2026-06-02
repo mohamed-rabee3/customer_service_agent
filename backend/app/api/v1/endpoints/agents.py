@@ -19,6 +19,7 @@ from app.services.whisper_service import WhisperService
 from app.api.v1.schemas.auth import UserResponse
 from app.core.constants import AgentType
 from app.core.security import get_current_user
+from app.core.supervisor_scope import agent_type_for_user, require_matching_agent_type
 from app.services import agent_service
 
 router = APIRouter(prefix="/agents", tags=["Agents"])
@@ -40,6 +41,9 @@ async def list_agents(
     Raises:
         401: Not authenticated
     """
+    scoped_type = agent_type_for_user(current_user)
+    if scoped_type is not None:
+        agent_type = scoped_type.value
     agents = agent_service.list_agents(
         supervisor_id=current_user.id,
         role=current_user.role,
@@ -68,11 +72,13 @@ async def create_agent(
         400: Maximum 3 agents allowed per supervisor
         401: Not authenticated
     """
-    agent_type = AgentType.VOICE
-    if request.agent_type:
+    allowed = agent_type_for_user(current_user)
+    if allowed is not None:
+        agent_type = require_matching_agent_type(request.agent_type, allowed)
+    elif request.agent_type:
         agent_type = request.agent_type
-    elif hasattr(current_user.profile, "supervisor_type"):
-        agent_type = AgentType(current_user.profile.supervisor_type.value)
+    else:
+        agent_type = AgentType.VOICE
 
     created_agent, webhook_set = await agent_service.create_agent_with_telegram_webhook(
         supervisor_id=current_user.id,
@@ -110,6 +116,7 @@ async def get_agent(
     agent_detail = agent_service.get_agent_detail(
         agent_id=agent_id,
         supervisor_id=current_user.id,
+        allowed_agent_type=agent_type_for_user(current_user),
     )
 
     return AgentDetailResponse.model_validate(agent_detail)
@@ -136,6 +143,7 @@ async def get_agent_status(
     status_data = agent_service.get_agent_status(
         agent_id=agent_id,
         supervisor_id=current_user.id,
+        allowed_agent_type=agent_type_for_user(current_user),
     )
 
     return AgentStatusResponse.model_validate(status_data)
@@ -167,6 +175,7 @@ async def update_agent(
         agent_id=agent_id,
         supervisor_id=current_user.id,
         request=request,
+        allowed_agent_type=agent_type_for_user(current_user),
     )
     
     response = AgentResponse.model_validate(updated_agent.model_dump())
@@ -226,4 +235,5 @@ async def delete_agent(
     await agent_service.delete_agent(
         agent_id=agent_id,
         supervisor_id=current_user.id,
+        allowed_agent_type=agent_type_for_user(current_user),
     )

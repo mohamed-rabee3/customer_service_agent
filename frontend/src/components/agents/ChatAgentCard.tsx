@@ -1,13 +1,15 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { MessageSquare, Edit3, Trash2, Power } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
 import AgentAvatar from './AgentAvatar';
 import Icon from '../Icon';
 import { IconProp } from '@fortawesome/fontawesome-svg-core';
 
+type AgentBackendStatus = 'idle' | 'in_call' | 'in_chat' | 'paused';
+
 interface ChatAgent {
   id: string;
   name: string;
-  status: 'active' | 'idle' | 'paused';
+  status: AgentBackendStatus;
   sentiment: string;
   performance: string;
   feed: string;
@@ -19,17 +21,21 @@ interface ChatAgent {
   };
 }
 
+const STATUS_LABEL: Record<AgentBackendStatus, string> = {
+  idle: 'IDLE',
+  in_call: 'IN CALL',
+  in_chat: 'IN CHAT',
+  paused: 'PAUSED',
+};
+
 interface ChatAgentCardProps {
   agent: ChatAgent;
   index: number;
   isSelected: boolean;
   onClick: (agent: ChatAgent) => void;
-  onEdit?: (agent: ChatAgent) => void;
-  onDelete?: (agent: ChatAgent) => void;
-  onToggleStatus?: (agent: ChatAgent) => void;
 }
 
-const ChatAgentCard: React.FC<ChatAgentCardProps> = ({ agent, index, isSelected, onClick, onEdit, onDelete, onToggleStatus }) => {
+const ChatAgentCard: React.FC<ChatAgentCardProps> = ({ agent, index, isSelected, onClick }) => {
   const [isClicking, setIsClicking] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -57,6 +63,8 @@ const ChatAgentCard: React.FC<ChatAgentCardProps> = ({ agent, index, isSelected,
     setTimeout(() => { setIsClicking(false); onClick(agent); }, 400);
   };
 
+  const isLive = agent.status === 'in_chat' || agent.status === 'in_call';
+
   return (
     <div
       ref={cardRef}
@@ -70,9 +78,9 @@ const ChatAgentCard: React.FC<ChatAgentCardProps> = ({ agent, index, isSelected,
         <div className="flex items-center gap-2">
           <span
             className="text-xs font-semibold uppercase tracking-widest"
-            style={{ color: agent.status === 'active' ? 'var(--success)' : 'var(--text-muted)' }}
+            style={{ color: isLive ? 'var(--success)' : 'var(--text-muted)' }}
           >
-            {agent.status}
+            {STATUS_LABEL[agent.status] ?? agent.status}
           </span>
         </div>
         <div className="flex items-center gap-1.5">
@@ -97,7 +105,7 @@ const ChatAgentCard: React.FC<ChatAgentCardProps> = ({ agent, index, isSelected,
 
       <div className="flex justify-center mb-4">
         <div className="agent-avatar-hover-scale">
-          <AgentAvatar name={agent.name} status={agent.status} size="md" />
+          <AgentAvatar name={agent.name} status={agent.status === 'idle' ? 'idle' : 'active'} size="md" />
         </div>
       </div>
 
@@ -115,39 +123,6 @@ const ChatAgentCard: React.FC<ChatAgentCardProps> = ({ agent, index, isSelected,
           <p className="text-base font-bold capitalize" style={{ color: 'var(--text-main)' }}>{agent.sentiment}</p>
         </div>
       </div>
-
-      {(onEdit || onDelete || onToggleStatus) && (
-          <div className="flex gap-2 mt-5 px-1 flex-wrap justify-center">
-              {onToggleStatus && (
-                  <button
-                      onClick={(e) => { e.stopPropagation(); onToggleStatus(agent); }}
-                      className="agent-config-btn"
-                      style={{ 
-                          color: agent.status === 'paused' ? 'var(--text-muted)' : 'var(--success)', 
-                          borderColor: agent.status === 'paused' ? 'var(--border)' : 'var(--success)' 
-                      }}
-                  >
-                      <Power size={15} /> {agent.status === 'paused' ? 'Turn On' : 'Turn Off'}
-                  </button>
-              )}
-              {onEdit && (
-                  <button
-                      onClick={(e) => { e.stopPropagation(); onEdit(agent); }}
-                      className="agent-config-btn agent-config-btn--edit"
-                  >
-                      <Edit3 size={15} /> Edit
-                  </button>
-              )}
-              {onDelete && (
-                  <button
-                      onClick={(e) => { e.stopPropagation(); onDelete(agent); }}
-                      className="agent-config-btn agent-config-btn--delete"
-                  >
-                      <Trash2 size={15} /> Delete
-                  </button>
-              )}
-          </div>
-      )}
 
       <div className="card-glow-bar" />
     </div>

@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { Send, ChevronDown, Check } from 'lucide-react';
 import { toast } from 'react-toastify';
 import AgentAvatar from './AgentAvatar';
-import { chatAPI } from '@/services/chatService';
 import { agentsAPI } from '@/services/agentsService';
 
 interface Agent {
@@ -96,17 +95,13 @@ const InjectBox: React.FC<InjectBoxProps> = ({ agents, label = 'inject', mode = 
         toast.warn(`${selectedAgentName} is not in an active call`);
         return;
       }
-    } else if (!selectedAgent.session_id) {
-      toast.warn(`${selectedAgentName} has no active chat session`);
+    } else if (selectedAgent.status !== 'in_chat') {
+      toast.warn(`${selectedAgentName} is not in an active chat`);
       return;
     }
     setIsSending(true);
     try {
-      if (mode === 'voice') {
-        await agentsAPI.whisper(selectedAgent.id, text.trim());
-      } else {
-        await chatAPI.whisper(selectedAgent.session_id!, text.trim());
-      }
+      await agentsAPI.whisper(selectedAgent.id, text.trim());
       setIsSending(false);
       setIsSuccess(true);
       setIsVaporizing(true);

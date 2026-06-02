@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException, status
 from app.api.v1.schemas.auth import UserResponse
 from app.api.v1.schemas.archive import ArchiveCard, ArchiveDetail
 from app.api.deps import get_current_user
+from app.core.supervisor_scope import agent_type_for_supervisor_id, agent_type_for_user
 from app.services.archive_service import ArchiveService
 from app.services.interaction_service import InteractionService
 
@@ -27,14 +28,24 @@ async def get_archives(
     """Get call/chat archive with advanced filtering."""
     interaction_service = InteractionService()
     
+    interaction_type: str | None = None
     if current_user.role == "admin":
         if supervisor_id:
-            allowed_agent_ids = await interaction_service.get_agent_ids_for_supervisor(supervisor_id)
+            channel = agent_type_for_supervisor_id(supervisor_id)
+            allowed_agent_ids = await interaction_service.get_agent_ids_for_supervisor(
+                supervisor_id, agent_type=channel
+            )
+            interaction_type = channel.value
         else:
             # Admin can see all, so passing None/Empty to repository (handled there)
             allowed_agent_ids = []
     else:
-        allowed_agent_ids = await interaction_service.get_agent_ids(current_user.id)
+        channel = agent_type_for_user(current_user)
+        allowed_agent_ids = await interaction_service.get_agent_ids(
+            current_user.id,
+        )
+        if channel is not None:
+            interaction_type = channel.value
     
     # Parse tags
     parsed_tags = None
@@ -71,7 +82,8 @@ async def get_archives(
     service = ArchiveService()
     result = await service.get_archives(
         agent_ids=allowed_agent_ids, page=page, limit=limit, agent_id=agent_id,
-        from_date=parsed_from, to_date=parsed_to, phone_number=phone_number, tags=parsed_tags
+        from_date=parsed_from, to_date=parsed_to, phone_number=phone_number, tags=parsed_tags,
+        interaction_type=interaction_type,
     )
     
     return {

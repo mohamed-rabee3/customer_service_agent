@@ -11,6 +11,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import {
     analyticsAPI,
+    type AnalyticsTimePeriod,
     type SupervisorAnalyticsData,
     type AdminAnalyticsData,
     type AgentAnalyticsData,
@@ -18,11 +19,14 @@ import {
 
 // ── Helpers ──
 
-function mapUiPeriodToApi(period: string): "today" | "week" | "month" | "all_time" {
+function mapUiPeriodToApi(period: string): AnalyticsTimePeriod {
     switch (period) {
-        case "today": case "yesterday": return "today";
+        case "today": return "today";
+        case "yesterday": return "yesterday";
         case "last7days": return "week";
-        case "last30days": case "thismonth": case "lastmonth": return "month";
+        case "last30days": return "last_30_days";
+        case "thismonth": return "this_month";
+        case "lastmonth": return "last_month";
         default: return "all_time";
     }
 }
@@ -135,14 +139,17 @@ function SectionCard({ title, children, delay = 0, className = "" }: {
 
 // ── Agent Table ──
 
-function AgentTable({ agents }: { agents: AgentAnalyticsData[] }) {
+function AgentTable({ agents, hideTypeColumn = false }: { agents: AgentAnalyticsData[]; hideTypeColumn?: boolean }) {
     if (!agents.length) return <p style={{ color: 'var(--text-muted)' }}>No agents found.</p>;
+    const headers = hideTypeColumn
+        ? ["Agent", "Interactions", "AHT", "FCR %", "CSAT", "Sentiment Δ", "Containment %", "Score"]
+        : ["Agent", "Type", "Interactions", "AHT", "FCR %", "CSAT", "Sentiment Δ", "Containment %", "Score"];
     return (
         <div className="overflow-x-auto">
             <table className="w-full text-sm" style={{ fontFamily: "'Inter', sans-serif" }}>
                 <thead>
                     <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                        {["Agent", "Type", "Interactions", "AHT", "FCR %", "CSAT", "Sentiment Δ", "Containment %", "Score"].map(h => (
+                        {headers.map(h => (
                             <th key={h} className="text-left py-3 px-2 font-medium text-xs uppercase tracking-wider"
                                 style={{ color: 'var(--text-muted)' }}>{h}</th>
                         ))}
@@ -153,6 +160,7 @@ function AgentTable({ agents }: { agents: AgentAnalyticsData[] }) {
                         <tr key={a.agent_id} className="transition-colors hover:bg-black/5"
                             style={{ borderBottom: '1px solid var(--glass-border)' }}>
                             <td className="py-3 px-2 font-medium" style={{ color: 'var(--text-main)' }}>{a.agent_name}</td>
+                            {!hideTypeColumn && (
                             <td className="py-3 px-2">
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
                                     style={{
@@ -163,6 +171,7 @@ function AgentTable({ agents }: { agents: AgentAnalyticsData[] }) {
                                     {a.agent_type}
                                 </span>
                             </td>
+                            )}
                             <td className="py-3 px-2" style={{ color: 'var(--text-secondary)' }}>{a.total_interactions}</td>
                             <td className="py-3 px-2" style={{ color: 'var(--text-secondary)' }}>{secondsToHms(a.avg_handle_time)}</td>
                             <td className="py-3 px-2"><span style={{ color: getColor(a.fcr_percentage) }}>{fmt(a.fcr_percentage)}%</span></td>
@@ -189,7 +198,10 @@ const AnalyticsPage: React.FC = () => {
     const { role, supervisorType, userId } = useAuth();
     const [selectedPeriod, setSelectedPeriod] = useState("today");
     const [isLoading, setIsLoading] = useState(true);
+    const isAdmin = role === 'admin';
     const isSupervisor = role === 'supervisor';
+    const isVoiceSupervisor = isSupervisor && supervisorType === 'voice';
+    const isChatSupervisor = isSupervisor && supervisorType === 'chat';
     const cacheRef = useRef<Map<string, { ts: number; payload: { metrics: {
         fcr: number; totalCalls: number; aht: number; csat: number;
         performance: number; sentimentShift: number; containment: number;
@@ -221,7 +233,7 @@ const AnalyticsPage: React.FC = () => {
             try {
                 if (!userId) return;
                 const apiPeriod = mapUiPeriodToApi(selectedPeriod);
-                const cacheKey = `${role}:${userId}:${apiPeriod}`;
+                const cacheKey = `${role}:${supervisorType}:${userId}:${apiPeriod}`;
                 const cached = cacheRef.current.get(cacheKey);
                 if (cached && Date.now() - cached.ts < 30000) {
                     setMetrics(cached.payload.metrics);
@@ -304,19 +316,30 @@ const AnalyticsPage: React.FC = () => {
         };
         const t = setTimeout(fetchAnalytics, 200);
         return () => clearTimeout(t);
-    }, [selectedPeriod, userId, role]);
+    }, [selectedPeriod, userId, role, supervisorType]);
 
-    // Chart data
     const channelData = [
         { name: "Voice", value: metrics.voiceCount, fill: "hsl(var(--primary))" },
         { name: "Chat", value: metrics.chatCount, fill: "hsl(var(--accent))" },
     ];
 
-    const sentimentData = [
-        { label: "Sentiment Shift", value: metrics.sentimentShift },
-    ];
-
     const peakData = peakHours;
+
+    const totalInteractionsLabel = isAdmin
+        ? 'Total Interactions'
+        : isVoiceSupervisor
+            ? 'Total Voice Calls'
+            : 'Total Chat Sessions';
+
+    const totalInteractionsSubtitle = isAdmin
+        ? `${metrics.voiceCount} voice · ${metrics.chatCount} chat`
+        : undefined;
+
+    const dashboardSubtitle = isAdmin
+        ? 'System-Wide Performance Overview'
+        : isVoiceSupervisor
+            ? 'Voice Team Performance Metrics'
+            : 'Chat Team Performance Metrics';
 
     return (
         <div className="min-h-screen w-full" style={{ backgroundColor: 'var(--bg)' }}>
@@ -335,7 +358,7 @@ const AnalyticsPage: React.FC = () => {
                         </h1>
                         <p className="text-base md:text-lg font-medium"
                             style={{ color: 'var(--text-secondary)', fontFamily: "'Inter', sans-serif" }}>
-                            {role === 'admin' ? 'System-Wide Performance Overview' : 'Team Performance Metrics'}
+                            {dashboardSubtitle}
                         </p>
                     </header>
 
@@ -369,9 +392,9 @@ const AnalyticsPage: React.FC = () => {
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
                                 <KpiCard value={`${fmt(metrics.fcr)}%`} label="First Contact Resolution"
                                     color={getColor(metrics.fcr)} icon={<Target size={20} strokeWidth={2} />} index={0} />
-                                <KpiCard value={metrics.totalCalls.toLocaleString()} label="Total Interactions"
+                                <KpiCard value={metrics.totalCalls.toLocaleString()} label={totalInteractionsLabel}
                                     color="var(--text-main)" icon={<Activity size={20} strokeWidth={2} />} index={1}
-                                    subtitle={`${metrics.voiceCount} voice · ${metrics.chatCount} chat`} />
+                                    subtitle={totalInteractionsSubtitle} />
                                 <KpiCard value={secondsToHms(metrics.aht)} label="Avg Handle Time"
                                     color={metrics.aht < 300 ? 'var(--success)' : metrics.aht < 600 ? 'var(--warning)' : 'var(--danger)'}
                                     icon={<Timer size={20} strokeWidth={2} />} index={2} />
@@ -379,7 +402,7 @@ const AnalyticsPage: React.FC = () => {
                                     color={getColor(metrics.csat)} icon={<HeartPulse size={20} strokeWidth={2} />} index={3} />
                             </div>
 
-                            {/* ── Secondary KPI Grid ── */}
+                            {/* ── Secondary KPI Grid (channel-specific for supervisors) ── */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-8">
                                 <KpiCard value={`${metrics.sentimentShift > 0 ? '+' : ''}${fmt(metrics.sentimentShift, 2)}`}
                                     label="Sentiment Shift" color={getSentimentColor(metrics.sentimentShift)}
@@ -388,20 +411,30 @@ const AnalyticsPage: React.FC = () => {
                                 <KpiCard value={`${fmt(metrics.containment)}%`} label="Containment Rate"
                                     color={getColor(metrics.containment)} icon={<Shield size={20} strokeWidth={2} />} index={5}
                                     subtitle="No escalation needed" />
+                                {(isAdmin || isChatSupervisor) && (
                                 <KpiCard value={secondsToHms(metrics.chatResponseTime)} label="Chat Response Time"
                                     color={metrics.chatResponseTime < 30 ? 'var(--success)' : metrics.chatResponseTime < 60 ? 'var(--warning)' : 'var(--danger)'}
                                     icon={<MessageSquare size={20} strokeWidth={2} />} index={6}
-                                    subtitle="All channels" />
+                                    subtitle="Customer to agent reply" />
+                                )}
+                                {(isAdmin || isChatSupervisor) && (
                                 <KpiCard value={`${fmt(metrics.chatResolution)}%`} label="Chat Resolution Rate"
                                     color={getColor(metrics.chatResolution)} icon={<MessageCircle size={20} strokeWidth={2} />} index={7} />
+                                )}
+                                {isVoiceSupervisor && (
+                                <KpiCard value={secondsToHms(metrics.escalationTime)} label="Escalation Resolution"
+                                    color="var(--text-main)" icon={<Zap size={20} strokeWidth={2} />} index={6}
+                                    subtitle="Avg time to resolve" />
+                                )}
                                 <KpiCard value={fmt(metrics.coachingFreq, 1)} label="Coaching per Agent"
                                     color="var(--text-main)" icon={<Users size={20} strokeWidth={2} />} index={8}
                                     subtitle="Whisper interventions" />
                             </div>
 
                             {/* ── Charts Row ── */}
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                                {/* Channel Distribution */}
+                            <div className={`grid grid-cols-1 ${isAdmin ? 'lg:grid-cols-2' : ''} gap-6 mb-8`}>
+                                {/* Channel Distribution — admin only */}
+                                {isAdmin && (
                                 <SectionCard title="Channel Distribution" delay={500}>
                                     <div className="flex items-center justify-center" style={{ minHeight: 220 }}>
                                         {(metrics.voiceCount + metrics.chatCount) > 0 ? (
@@ -424,9 +457,10 @@ const AnalyticsPage: React.FC = () => {
                                         )}
                                     </div>
                                 </SectionCard>
+                                )}
 
                                 {/* Performance Overview */}
-                                <SectionCard title="Performance Overview" delay={600}>
+                                <SectionCard title="Performance Overview" delay={600} className={!isAdmin ? 'max-w-2xl mx-auto w-full' : ''}>
                                     <div className="flex flex-col items-center justify-center py-4">
                                         <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
                                             style={{ background: 'linear-gradient(135deg, hsl(var(--primary)/0.1), hsl(var(--primary)/0.05))' }}>
@@ -437,7 +471,7 @@ const AnalyticsPage: React.FC = () => {
                                             {fmt(metrics.performance, 0)}%
                                         </div>
                                         <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
-                                            {role === 'admin' ? 'System Performance' : 'Supervisor Performance'}
+                                            {isAdmin ? 'System Performance' : isVoiceSupervisor ? 'Voice Team Performance' : 'Chat Team Performance'}
                                         </p>
                                         <div className="flex items-center gap-4 mt-4 text-xs" style={{ color: 'var(--text-muted)' }}>
                                             <span>Escalation Avg: {secondsToHms(metrics.escalationTime)}</span>
@@ -449,12 +483,12 @@ const AnalyticsPage: React.FC = () => {
                             {/* ── Agent Comparison Table (Supervisor only) ── */}
                             {isSupervisor && metrics.agents.length > 0 && (
                                 <SectionCard title="Agent Performance Breakdown" delay={700}>
-                                    <AgentTable agents={metrics.agents} />
+                                    <AgentTable agents={metrics.agents} hideTypeColumn />
                                 </SectionCard>
                             )}
 
                             {/* ── Peak Interaction Time (Admin only) ── */}
-                            {role === "admin" && (
+                            {isAdmin && (
                                 <div className="mt-6">
                                     <SectionCard title="Peak Interaction Time" delay={750}>
                                         {peakData.length > 0 ? (

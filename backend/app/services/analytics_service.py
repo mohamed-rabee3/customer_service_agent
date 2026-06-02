@@ -2,7 +2,7 @@
 from time import time
 from typing import List, Dict, Any, Optional
 from uuid import UUID
-from app.db.supabase import get_supabase_client
+from app.db.supabase import get_supabase_service_client
 from app.repositories.analytics_repository import AnalyticsRepository
 from app.api.v1.schemas.analytics import SupervisorAnalytics, AgentAnalytics, AdminAnalytics
 
@@ -12,7 +12,7 @@ _CACHE_TTL_SECONDS = 30.0
 
 class AnalyticsService:
     def __init__(self):
-        self.supabase = get_supabase_client()
+        self.supabase = get_supabase_service_client()
         self.repository = AnalyticsRepository(self.supabase)
 
     async def get_supervisor_analytics(self, supervisor_id: UUID, time_period: str = "all_time") -> SupervisorAnalytics:

@@ -10,10 +10,14 @@ from app.core.constants import UserRole
 
 router = APIRouter()
 
+_ANALYTICS_TIME_PERIODS = (
+    "^(today|yesterday|week|last_30_days|this_month|last_month|month|all_time)$"
+)
+
 @router.get("/supervisor/{supervisor_id}", response_model=SupervisorAnalytics)
 async def get_supervisor_analytics(
     supervisor_id: UUID,
-    time_period: str = Query("all_time", pattern="^(today|week|month|all_time)$"),
+    time_period: str = Query("all_time", pattern=_ANALYTICS_TIME_PERIODS),
     current_user: UserResponse = Depends(get_current_user),
 ):
     """Get analytics for specific supervisor."""
@@ -26,7 +30,7 @@ async def get_supervisor_analytics(
 @router.get("/agent/{agent_id}", response_model=AgentAnalytics)
 async def get_agent_analytics(
     agent_id: UUID,
-    time_period: str = Query("all_time", pattern="^(today|week|month|all_time)$"),
+    time_period: str = Query("all_time", pattern=_ANALYTICS_TIME_PERIODS),
     current_user: UserResponse = Depends(get_current_user),
 ):
     """Get analytics for specific agent."""
@@ -45,7 +49,7 @@ async def get_agent_analytics(
 
 @router.get("/admin/overview", response_model=AdminAnalytics)
 async def get_admin_analytics(
-    time_period: str = Query("all_time", pattern="^(today|week|month|all_time)$"),
+    time_period: str = Query("all_time", pattern=_ANALYTICS_TIME_PERIODS),
     current_user: UserResponse = Depends(get_current_user),
 ):
     """Get aggregate analytics across all supervisors for admin dashboard."""

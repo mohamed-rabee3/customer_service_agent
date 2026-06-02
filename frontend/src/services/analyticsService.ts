@@ -70,18 +70,28 @@ export interface AdminAnalyticsData {
 
 // ── API Calls ──
 
+export type AnalyticsTimePeriod =
+  | 'today'
+  | 'yesterday'
+  | 'week'
+  | 'last_30_days'
+  | 'this_month'
+  | 'last_month'
+  | 'month'
+  | 'all_time';
+
 export const analyticsAPI = {
-  getByAgent: (agentId: string, timePeriod = 'all_time') =>
+  getByAgent: (agentId: string, timePeriod: AnalyticsTimePeriod = 'all_time') =>
     api.get<AgentAnalyticsData>(`/analytics/agent/${agentId}`, {
       params: { time_period: timePeriod },
     }),
 
-  getBySupervisor: (supervisorId: string, timePeriod = 'all_time') =>
+  getBySupervisor: (supervisorId: string, timePeriod: AnalyticsTimePeriod = 'all_time') =>
     api.get<SupervisorAnalyticsData>(`/analytics/supervisor/${supervisorId}`, {
       params: { time_period: timePeriod },
     }),
 
-  getAdminOverview: (timePeriod = 'all_time') =>
+  getAdminOverview: (timePeriod: AnalyticsTimePeriod = 'all_time') =>
     api.get<AdminAnalyticsData>(`/analytics/admin/overview`, {
       params: { time_period: timePeriod },
     }),

@@ -38,7 +38,8 @@ class ArchiveRepository:
         from_date: Optional[datetime] = None,
         to_date: Optional[datetime] = None,
         phone_number: Optional[str] = None,
-        tags: Optional[List[str]] = None
+        tags: Optional[List[str]] = None,
+        interaction_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Get call/chat archive with dynamic filters.
         
@@ -50,6 +51,8 @@ class ArchiveRepository:
             "*, agents(name), archive(*)", count="exact"
         )
         query = query.eq("status", "completed")
+        if interaction_type:
+            query = query.eq("interaction_type", interaction_type)
 
         # Security boundary: only allow user's agents
         # If agent_ids is empty/None (admin bypassing), skip? 
@@ -131,12 +134,37 @@ class ArchiveRepository:
             "limit": limit
         }
 
+    def _build_chat_transcript(self, interaction_id: str) -> str:
+        """Load full chat transcript from persisted messages."""
+        res = (
+            self.supabase.table("chat_messages")
+            .select("role, content")
+            .eq("interaction_id", interaction_id)
+            .order("created_at")
+            .execute()
+        )
+        lines: list[str] = []
+        for row in res.data or []:
+            content = (row.get("content") or "").strip()
+            if not content:
+                continue
+            role = row.get("role")
+            if role == "customer":
+                lines.append(f"Customer: {content}")
+            elif role == "agent":
+                lines.append(f"Agent: {content}")
+            elif role == "supervisor":
+                lines.append(f"Supervisor: {content}")
+        return "\n".join(lines)
+
     def get_archive_detail(self, interaction_id: UUID, agent_ids: Optional[List[str]]) -> Optional[Dict[str, Any]]:
         """Get detailed view of a specific archive (completed interaction)."""
-        query = self.supabase.table("interactions")\
-            .select("*, agents(name), archive(*)")\
-            .eq("id", str(interaction_id))\
-            .eq("status", "completed")
+        query = (
+            self.supabase.table("interactions")
+            .select("*, agents(name), archive(*)")
+            .eq("id", str(interaction_id))
+            .in_("status", ["completed", "abandoned"])
+        )
             
         # Security: Apply agent filter only if not Admin (agent_ids is not None)
         if agent_ids is not None:
@@ -173,6 +201,10 @@ class ArchiveRepository:
             except Exception:
                 duration_seconds = None
 
+        transcript = item.get("transcript")
+        if i_type == "chat" and not (transcript and str(transcript).strip()):
+            transcript = self._build_chat_transcript(str(interaction_id))
+
         mapped_item = {
             **item,
             "interaction_id": item["id"],
@@ -182,7 +214,8 @@ class ArchiveRepository:
             "issues": item.get("issues") or [],
             "ended_at": item.get("end_at"),
             "duration_seconds": duration_seconds,
+            "transcript": transcript,
         }
-            
+
         return mapped_item
 

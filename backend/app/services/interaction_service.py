@@ -9,10 +9,12 @@ from uuid import UUID, uuid4
 from app.core.config import settings
 from app.core.constants import (
     AgentStatus,
+    AgentType,
     InteractionStatus,
     InteractionType,
     SUPERVISOR_MONITORING_PRESENCE_TTL_SECONDS,
 )
+from app.core.supervisor_scope import agent_type_for_supervisor_id
 from app.core.exceptions import NotFoundException, ValidationException
 from app.livekit import room_manager, token_service
 from app.repositories.agent_repository import AgentRepository
@@ -206,8 +208,8 @@ class InteractionService:
         limit: int = 20,
     ):
         """List interactions for a supervisor's agents with pagination."""
-        # Get supervisor's agents
-        agents = self.agent_repo.get_by_supervisor(supervisor_id)
+        channel = agent_type_for_supervisor_id(supervisor_id)
+        agents = self.agent_repo.get_by_supervisor(supervisor_id, agent_type=channel)
         if not agents:
             return {"interactions": [], "total": 0, "page": page, "limit": limit}
 
@@ -340,9 +342,15 @@ class InteractionService:
         except Exception as e:
             raise Exception(f"Failed to update interaction: {e}") from e
 
-    async def get_agent_ids_for_supervisor(self, supervisor_id: UUID) -> list[str]:
+    async def get_agent_ids_for_supervisor(
+        self,
+        supervisor_id: UUID,
+        agent_type: AgentType | None = None,
+    ) -> list[str]:
         """Return agent id strings for archive/analytics scoping (supervisor = auth user id)."""
-        agents = self.agent_repo.get_by_supervisor(supervisor_id)
+        if agent_type is None:
+            agent_type = agent_type_for_supervisor_id(supervisor_id)
+        agents = self.agent_repo.get_by_supervisor(supervisor_id, agent_type=agent_type)
         return [str(a.id) for a in agents]
 
     async def get_agent_ids(self, supervisor_user_id: UUID) -> list[str]:

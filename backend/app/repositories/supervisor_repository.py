@@ -109,11 +109,16 @@ class SupervisorRepository(BaseRepository[SupervisorModel]):
         """
         Get aggregated dashboard data for a supervisor.
         """
-        # 1. Fetch all agents for this supervisor
+        supervisor = self.get_by_id(supervisor_id)
+        if supervisor is None:
+            return []
+
+        # 1. Fetch agents for this supervisor (voice OR chat only)
         agents_result = (
             self.client.table("agents")
             .select("*")
             .eq("supervisor_id", str(supervisor_id))
+            .eq("agent_type", supervisor.supervisor_type.value)
             .order("created_at")
             .execute()
         )
@@ -184,10 +189,15 @@ class SupervisorRepository(BaseRepository[SupervisorModel]):
         limit: int = 10,
     ) -> list[dict[str, Any]]:
         """Get recent interactions for a supervisor's agents."""
+        supervisor = self.get_by_id(supervisor_id)
+        if supervisor is None:
+            return []
+
         agents_result = (
             self.client.table("agents")
             .select("id")
             .eq("supervisor_id", str(supervisor_id))
+            .eq("agent_type", supervisor.supervisor_type.value)
             .execute()
         )
 
@@ -200,6 +210,7 @@ class SupervisorRepository(BaseRepository[SupervisorModel]):
             self.client.table("interactions")
             .select("*")
             .in_("agent_id", agent_ids)
+            .eq("interaction_type", supervisor.supervisor_type.value)
             .order("started_at", desc=True)
             .limit(limit)
             .execute()

@@ -1,5 +1,6 @@
 """Base agent utilities for database access from the agent worker process."""
 
+import asyncio
 import json
 import logging
 import re
@@ -176,6 +177,78 @@ def save_interaction_summary(
     except Exception as e:
         logger.error(f"Failed to save summary for {interaction_id}: {e}")
         return False
+
+
+def _fallback_chat_archive_from_transcript(transcript: str) -> tuple[str, list, list, float, str]:
+    """Minimal archive payload when Groq summarization is unavailable."""
+    lines = [ln.strip() for ln in (transcript or "").splitlines() if ln.strip()]
+    if not lines:
+        summary = "Chat session ended with no captured messages."
+    else:
+        preview = " ".join(lines[-4:])[:500]
+        summary = f"Chat session completed. Latest messages: {preview}"
+    return (
+        summary,
+        [{"type": "general", "resolved": True}],
+        ["chat"],
+        50.0,
+        "neutral",
+    )
+
+
+async def archive_chat_interaction(interaction_id: str, transcript: str) -> None:
+    """
+    Persist Groq summary + ``public.archive`` row after a chat session ends.
+
+    Always writes an archive row (Groq when possible, otherwise a transcript fallback).
+    """
+    text = (transcript or "").strip()
+    if not text:
+        logger.info("Skipping archive for %s: empty transcript", interaction_id)
+        return
+
+    summary_text: str
+    issues_list: list
+    topic_tags: list
+    overall_perf: float
+    sentiment_groq: str
+
+    try:
+        (
+            summary_text,
+            issues_list,
+            topic_tags,
+            overall_perf,
+            sentiment_groq,
+        ) = await asyncio.to_thread(summarize_voice_call_groq, text)
+    except Exception as e:
+        logger.warning(
+            "Groq chat archive summarization failed for %s, using fallback: %s",
+            interaction_id,
+            e,
+        )
+        (
+            summary_text,
+            issues_list,
+            topic_tags,
+            overall_perf,
+            sentiment_groq,
+        ) = _fallback_chat_archive_from_transcript(text)
+
+    save_interaction_summary(
+        interaction_id=interaction_id,
+        summary=summary_text,
+        issues=issues_list,
+        tags=topic_tags,
+    )
+    upsert_interaction_archive_record(
+        interaction_id=interaction_id,
+        summary=summary_text,
+        overall_performance=overall_perf,
+        sentiment=sentiment_groq,
+        issues=issues_list,
+        tags=topic_tags,
+    )
 
 
 def upsert_interaction_archive_record(

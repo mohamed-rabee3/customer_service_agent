@@ -1,6 +1,6 @@
 """Analytics repository with comprehensive KPI calculations."""
-from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
+from typing import Dict, Any, List, Optional, Tuple
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 from supabase import Client
 from app.api.v1.schemas.analytics import (
@@ -25,19 +25,77 @@ def _parse_time(t_str):
         return None
 
 
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _to_iso(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _resolve_time_range(time_period: str) -> Tuple[Optional[datetime], Optional[datetime]]:
+    """Return (start_inclusive, end_exclusive) in UTC. end_exclusive is None for open-ended ranges."""
+    period = time_period
+    if period == "month":
+        period = "last_30_days"
+
+    now = _utc_now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if period == "all_time":
+        return None, None
+    if period == "today":
+        return today_start, None
+    if period == "yesterday":
+        return today_start - timedelta(days=1), today_start
+    if period == "week":
+        return now - timedelta(days=7), None
+    if period == "last_30_days":
+        return now - timedelta(days=30), None
+    if period == "this_month":
+        return today_start.replace(day=1), None
+    if period == "last_month":
+        first_this_month = today_start.replace(day=1)
+        if first_this_month.month == 1:
+            first_last_month = first_this_month.replace(
+                year=first_this_month.year - 1, month=12, day=1
+            )
+        else:
+            first_last_month = first_this_month.replace(
+                month=first_this_month.month - 1, day=1
+            )
+        return first_last_month, first_this_month
+    return None, None
+
+
+def _apply_started_at_filter(query, start: Optional[datetime], end: Optional[datetime]):
+    if start is not None:
+        query = query.gte("started_at", _to_iso(start))
+    if end is not None:
+        query = query.lt("started_at", _to_iso(end))
+    return query
+
+
 class AnalyticsRepository:
     def __init__(self, supabase: Client):
         self.supabase = supabase
 
     # ── Existing: FCR Calculation ─────────────────────────────────────
 
-    def _calculate_fcr(self, interactions: List[Dict[str, Any]]) -> int:
+    def _calculate_fcr(
+        self,
+        interactions: List[Dict[str, Any]],
+        history_interactions: Optional[List[Dict[str, Any]]] = None,
+    ) -> int:
         """Calculate FCR: resolved on first contact, no callback within 3 days."""
         valid = [i for i in interactions if i.get("started_at")]
         valid.sort(key=lambda x: x["started_at"])
+        history_source = history_interactions if history_interactions is not None else interactions
 
         history_map: Dict[tuple, List[datetime]] = {}
-        for item in valid:
+        for item in history_source:
             phone = item.get("phone_number")
             started_at = _parse_time(item["started_at"])
             if not started_at:
@@ -73,11 +131,23 @@ class AnalyticsRepository:
             if not is_resolved:
                 continue
 
-            is_fcr_valid = True
-            my_time = item.get("_parsed_time")
+            my_time = item.get("_parsed_time") or _parse_time(item.get("started_at"))
             if not my_time:
                 continue
-            for issue in item.get("_parsed_issues", []):
+            issue_ids = item.get("_parsed_issues")
+            if issue_ids is None:
+                issue_ids = []
+                if isinstance(issues_data, list):
+                    for iss in issues_data:
+                        if isinstance(iss, dict) and "type" in iss:
+                            issue_ids.append(iss["type"])
+                        elif isinstance(iss, str):
+                            issue_ids.append(iss)
+                if not issue_ids and item.get("tags") and isinstance(item["tags"], list):
+                    issue_ids.extend(str(t) for t in item["tags"])
+
+            is_fcr_valid = True
+            for issue in issue_ids:
                 phone = item.get("phone_number")
                 if not phone:
                     continue
@@ -145,35 +215,69 @@ class AnalyticsRepository:
 
     # ── New: Escalation Metrics ───────────────────────────────────────
 
-    def _calculate_escalation_metrics(self, interaction_ids: List[str]) -> Dict[str, Any]:
+    def _calculate_escalation_metrics(
+        self,
+        interaction_ids: List[str],
+        interaction_starts: Optional[Dict[str, datetime]] = None,
+    ) -> Dict[str, Any]:
         """Returns {escalation_count, avg_resolution_time_sec, coaching_count}."""
         result = {"escalation_count": 0, "avg_resolution_time_sec": 0.0, "coaching_count": 0}
         if not interaction_ids:
             return result
+        starts = interaction_starts or {}
         try:
             res = (self.supabase.table("tool_permissions")
-                   .select("*")
+                   .select("interaction_id, responded_at")
                    .in_("interaction_id", interaction_ids)
                    .execute())
             rows = res.data or []
             result["escalation_count"] = len(rows)
-            # Coaching = whisper-type or any supervisor intervention
             result["coaching_count"] = len(rows)
-            # Resolution time = responded_at - created timestamp (from id generation time)
             times = []
             for row in rows:
-                if row.get("responded_at"):
-                    # Use the row creation time approximation from status change
-                    responded = _parse_time(row["responded_at"])
-                    if responded:
-                        # Approximate creation time: check if there's a created_at or use status
-                        # tool_permissions doesn't have created_at, approximate from interaction start
-                        times.append(30.0)  # Default ~30s if no exact creation timestamp
+                responded = _parse_time(row.get("responded_at"))
+                started = starts.get(row.get("interaction_id"))
+                if responded and started:
+                    if started.tzinfo is None:
+                        started = started.replace(tzinfo=timezone.utc)
+                    if responded.tzinfo is None:
+                        responded = responded.replace(tzinfo=timezone.utc)
+                    delta = (responded - started).total_seconds()
+                    if 0 < delta < 86400:
+                        times.append(delta)
             if times:
                 result["avg_resolution_time_sec"] = sum(times) / len(times)
         except Exception as e:
             logger.warning("Escalation metrics calc failed: %s", e)
         return result
+
+    def _fetch_archive_performance(self, interaction_ids: List[str]) -> Dict[str, float]:
+        """Map interaction_id -> overall_performance (0-100) from archive rows."""
+        perf_map: Dict[str, float] = {}
+        if not interaction_ids:
+            return perf_map
+        for i in range(0, len(interaction_ids), 500):
+            batch = interaction_ids[i:i + 500]
+            try:
+                res = (
+                    self.supabase.table("archive")
+                    .select("interaction_id, overall_performance")
+                    .in_("interaction_id", batch)
+                    .execute()
+                )
+                for row in (res.data or []):
+                    op = row.get("overall_performance")
+                    if op is not None:
+                        perf_map[row["interaction_id"]] = float(op)
+            except Exception as e:
+                logger.warning("Archive CSAT fetch failed: %s", e)
+        return perf_map
+
+    def _avg_csat_from_archive(
+        self, interaction_ids: List[str], archive_perf: Dict[str, float]
+    ) -> float:
+        scores = [archive_perf[iid] for iid in interaction_ids if iid in archive_perf]
+        return sum(scores) / len(scores) if scores else 0.0
 
     # ── New: Chat Response Time ───────────────────────────────────────
 
@@ -224,44 +328,74 @@ class AnalyticsRepository:
 
     def get_supervisor_analytics(self, supervisor_id: UUID, time_period: str = "all_time") -> SupervisorAnalytics:
         """Calculate full analytics for a supervisor."""
-        now = datetime.utcnow()
-        start_date = None
-        if time_period == "today":
-            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        elif time_period == "week":
-            start_date = now - timedelta(days=7)
-        elif time_period == "month":
-            start_date = now - timedelta(days=30)
-
-        # Get agents
-        agents_res = self.supabase.table("agents").select("id, name, agent_type").eq(
-            "supervisor_id", str(supervisor_id)).execute()
-        agents = agents_res.data or []
-        agent_ids = [a["id"] for a in agents]
-        agent_map = {a["id"]: a["name"] for a in agents}
-        agent_type_map = {a["id"]: a.get("agent_type", "voice") for a in agents}
+        start_date, end_date = _resolve_time_range(time_period)
 
         empty = SupervisorAnalytics(
             performance_score=0.0, fcr_percentage=0.0, avg_csat=0.0,
             avg_handle_time=0.0, total_interactions=0, agents_breakdown=[]
         )
+
+        sup_res = (
+            self.supabase.table("supervisors")
+            .select("supervisor_type")
+            .eq("userID", str(supervisor_id))
+            .limit(1)
+            .execute()
+        )
+        if not sup_res.data:
+            return empty
+        channel = sup_res.data[0].get("supervisor_type", "voice")
+
+        # Get agents for this supervisor's channel only
+        agents_res = (
+            self.supabase.table("agents")
+            .select("id, name, agent_type")
+            .eq("supervisor_id", str(supervisor_id))
+            .eq("agent_type", channel)
+            .execute()
+        )
+        agents = agents_res.data or []
+        agent_ids = [a["id"] for a in agents]
+        agent_map = {a["id"]: a["name"] for a in agents}
+        agent_type_map = {a["id"]: a.get("agent_type", "voice") for a in agents}
+
         if not agent_ids:
             return empty
 
-        # Fetch interactions
-        query = self.supabase.table("interactions").select("*").in_("agent_id", agent_ids)
-        if start_date:
-            query = query.gte("started_at", start_date.isoformat())
+        # Fetch interactions (same channel as supervisor)
+        query = (
+            self.supabase.table("interactions")
+            .select("*")
+            .in_("agent_id", agent_ids)
+            .eq("interaction_type", channel)
+        )
+        query = _apply_started_at_filter(query, start_date, end_date)
         interactions = query.execute().data or []
 
-        # Fetch analytics samples for CSAT
-        analytics_res = self.supabase.table("agent_analytics").select("*").in_(
-            "agent_id", agent_ids).execute()
-        analytics_rows = analytics_res.data or []
-        agent_analytics_samples = {aid: [] for aid in agent_ids}
-        for row in analytics_rows:
-            if row["agent_id"] in agent_analytics_samples:
-                agent_analytics_samples[row["agent_id"]].append(row)
+        # FCR callback lookback: include 3 extra days before window for repeat-contact detection
+        fcr_history = interactions
+        if start_date is not None:
+            lookback_start = start_date - timedelta(days=3)
+            hist_query = (
+                self.supabase.table("interactions")
+                .select("*")
+                .in_("agent_id", agent_ids)
+                .eq("interaction_type", channel)
+            )
+            hist_query = hist_query.gte("started_at", _to_iso(lookback_start))
+            if end_date is not None:
+                hist_query = hist_query.lt("started_at", _to_iso(end_date))
+            fcr_history = hist_query.execute().data or []
+
+        interaction_starts: Dict[str, datetime] = {}
+        for i in interactions:
+            parsed = _parse_time(i.get("started_at"))
+            if parsed:
+                interaction_starts[i["id"]] = parsed
+
+        archive_perf = self._fetch_archive_performance(
+            [i["id"] for i in interactions]
+        )
 
         # Group interactions by agent
         agent_inters_map: Dict[str, List[Dict]] = {aid: [] for aid in agent_ids}
@@ -273,7 +407,9 @@ class AnalyticsRepository:
         # ── Batch compute new KPIs ──
         sentiment_shifts = self._calculate_sentiment_shift(all_interaction_ids)
         containment_overall = self._calculate_containment_rate(all_interaction_ids)
-        escalation_metrics = self._calculate_escalation_metrics(all_interaction_ids)
+        escalation_metrics = self._calculate_escalation_metrics(
+            all_interaction_ids, interaction_starts
+        )
 
         # Chat-specific: filter chat interaction IDs
         chat_inter_ids = [i["id"] for i in interactions if i.get("interaction_type") == "chat"]
@@ -298,21 +434,15 @@ class AnalyticsRepository:
                     if s and e:
                         durations.append((e - s).total_seconds())
             avg_aht = sum(durations) / len(durations) if durations else 0.0
-            if not durations:
-                samples = agent_analytics_samples[aid]
-                if samples:
-                    avg_aht = sum(s.get("resolution_time_sec") or 0 for s in samples) / len(samples)
 
-            # CSAT
-            samples = agent_analytics_samples[aid]
-            avg_csat = sum(s.get("csat_score") or 0 for s in samples) / len(samples) if samples else 0.0
+            agent_inter_ids = [i["id"] for i in inters]
+            avg_csat = self._avg_csat_from_archive(agent_inter_ids, archive_perf)
 
             # FCR
-            fcr_count = self._calculate_fcr(inters)
+            fcr_count = self._calculate_fcr(inters, fcr_history)
             fcr_pct = (fcr_count / count * 100) if count > 0 else 0.0
 
             # Sentiment shift (per-agent average)
-            agent_inter_ids = [i["id"] for i in inters]
             agent_shifts = [sentiment_shifts.get(iid, 0.0) for iid in agent_inter_ids]
             avg_shift = sum(agent_shifts) / len(agent_shifts) if agent_shifts else 0.0
 
@@ -320,7 +450,9 @@ class AnalyticsRepository:
             agent_containment = self._calculate_containment_rate(agent_inter_ids)
 
             # Escalation count for this agent
-            agent_escalation = self._calculate_escalation_metrics(agent_inter_ids)
+            agent_escalation = self._calculate_escalation_metrics(
+                agent_inter_ids, interaction_starts
+            )
 
             # Chat response time (per-agent, only if chat agent)
             agent_chat_ids = [i["id"] for i in inters if i.get("interaction_type") == "chat"]
@@ -469,21 +601,12 @@ class AnalyticsRepository:
                 containment_rate=sa.containment_rate,
             ))
 
-        # Peak interaction time chart data (24h buckets)
-        now = datetime.utcnow()
-        start_date = None
-        if time_period == "today":
-            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        elif time_period == "week":
-            start_date = now - timedelta(days=7)
-        elif time_period == "month":
-            start_date = now - timedelta(days=30)
-
+        # Peak interaction time chart data (24h buckets, UTC)
+        peak_start, peak_end = _resolve_time_range(time_period)
         peak_buckets = {h: 0 for h in range(24)}
         try:
             iq = self.supabase.table("interactions").select("started_at")
-            if start_date:
-                iq = iq.gte("started_at", start_date.isoformat())
+            iq = _apply_started_at_filter(iq, peak_start, peak_end)
             interaction_rows = iq.execute().data or []
             for row in interaction_rows:
                 ts = _parse_time(row.get("started_at"))

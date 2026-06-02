@@ -14,7 +14,6 @@ from app.core.constants import (
     AgentType,
     InteractionStatus,
 )
-from app.db.supabase import get_supabase_service_client
 from app.core.exceptions import (
     AgentBusyException,
     ForbiddenException,
@@ -113,7 +112,9 @@ def create_agent(
     """
     Create a new agent for a supervisor.
     """
-    current_count = agent_repository.count_by_supervisor(supervisor_id)
+    current_count = agent_repository.count_by_supervisor(
+        supervisor_id, agent_type=agent_type
+    )
 
     if current_count >= MAX_AGENTS_PER_SUPERVISOR:
         raise HTTPException(
@@ -175,7 +176,12 @@ def create_agent(
         )
 
 
-def get_agent(agent_id: UUID, supervisor_id: UUID) -> AgentModel:
+def get_agent(
+    agent_id: UUID,
+    supervisor_id: UUID,
+    *,
+    allowed_agent_type: AgentType | None = None,
+) -> AgentModel:
     """
     Get agent details by ID with ownership check.
     """
@@ -187,14 +193,26 @@ def get_agent(agent_id: UUID, supervisor_id: UUID) -> AgentModel:
     if agent.supervisor_id != supervisor_id:
         raise ForbiddenException("You do not have permission to access this agent")
 
+    if allowed_agent_type is not None and agent.agent_type != allowed_agent_type:
+        raise ForbiddenException(
+            f"You do not have permission to access {agent.agent_type.value} agents"
+        )
+
     return agent
 
 
-def get_agent_detail(agent_id: UUID, supervisor_id: UUID) -> dict:
+def get_agent_detail(
+    agent_id: UUID,
+    supervisor_id: UUID,
+    *,
+    allowed_agent_type: AgentType | None = None,
+) -> dict:
     """
     Get detailed agent information.
     """
-    agent = get_agent(agent_id, supervisor_id)
+    agent = get_agent(
+        agent_id, supervisor_id, allowed_agent_type=allowed_agent_type
+    )
 
     current_interaction = None
     if agent.status in [AgentStatus.IN_CALL, AgentStatus.IN_CHAT]:
@@ -209,11 +227,18 @@ def get_agent_detail(agent_id: UUID, supervisor_id: UUID) -> dict:
     }
 
 
-def get_agent_status(agent_id: UUID, supervisor_id: UUID) -> dict:
+def get_agent_status(
+    agent_id: UUID,
+    supervisor_id: UUID,
+    *,
+    allowed_agent_type: AgentType | None = None,
+) -> dict:
     """
     Get agent's current status and real-time metrics.
     """
-    agent = get_agent(agent_id, supervisor_id)
+    agent = get_agent(
+        agent_id, supervisor_id, allowed_agent_type=allowed_agent_type
+    )
 
     current_interaction = None
     realtime_metrics = None
@@ -237,11 +262,27 @@ def update_agent(
     agent_id: UUID,
     supervisor_id: UUID,
     request: UpdateAgentRequest,
+    *,
+    allowed_agent_type: AgentType | None = None,
 ) -> AgentModel:
     """
     Update an agent's configuration.
     """
-    agent = get_agent(agent_id, supervisor_id)
+    agent = get_agent(
+        agent_id, supervisor_id, allowed_agent_type=allowed_agent_type
+    )
+
+    if request.agent_type is not None:
+        if allowed_agent_type is not None and request.agent_type != allowed_agent_type:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot change agent type to '{request.agent_type.value}'",
+            )
+        if request.agent_type != agent.agent_type:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Agent channel type cannot be changed after creation",
+            )
 
     status_only = _is_status_only_update(request)
     if agent.status == AgentStatus.IN_CALL and not status_only:
@@ -294,18 +335,30 @@ def update_agent(
     return updated_agent
 
 
-async def delete_agent(agent_id: UUID, supervisor_id: UUID) -> None:
+async def delete_agent(
+    agent_id: UUID,
+    supervisor_id: UUID,
+    *,
+    allowed_agent_type: AgentType | None = None,
+) -> None:
     """
     Delete an agent and cascade-delete its interaction history.
 
     Interactions use ON DELETE RESTRICT on ``agent_id``, so child rows
     (chat messages, archives, metrics) are removed first via interaction delete.
     """
-    agent = get_agent(agent_id, supervisor_id)
+    agent = get_agent(
+        agent_id, supervisor_id, allowed_agent_type=allowed_agent_type
+    )
 
-<<<<<<< HEAD
-    if agent.status in [AgentStatus.IN_CALL, AgentStatus.IN_CHAT]:
-        raise AgentBusyException("Cannot delete agent while in active call/chat")
+    if agent.status == AgentStatus.IN_CALL:
+        raise AgentBusyException(
+            "Cannot delete agent during an active voice call. End the call first."
+        )
+
+    # Clear in-memory chats and mark stale DB rows completed (common after restarts)
+    if agent.status in (AgentStatus.IN_CHAT, AgentStatus.IDLE, AgentStatus.PAUSED):
+        await release_agent_from_active_chats(agent_id)
 
     supabase_admin = get_supabase_service_client()
 
@@ -313,16 +366,14 @@ async def delete_agent(agent_id: UUID, supervisor_id: UUID) -> None:
         supabase_admin.table("interactions")
         .select("id")
         .eq("agent_id", str(agent_id))
-        .eq("status", "active")
+        .eq("status", InteractionStatus.ACTIVE.value)
         .execute()
     )
     if active_result.data:
-        raise AgentBusyException("Cannot delete agent while in active call/chat")
-=======
-    if agent.status == AgentStatus.IN_CALL:
-        raise AgentBusyException("Cannot delete agent while in active call")
-    if agent.status == AgentStatus.IN_CHAT:
-        await release_agent_from_active_chats(agent_id)
+        raise AgentBusyException(
+            "Cannot delete agent while an interaction is still active. "
+            "End the call or chat from the dashboard, then try again."
+        )
 
     token = (agent.telegram_bot_token or "").strip()
     if token and token != "{}":
@@ -330,10 +381,6 @@ async def delete_agent(agent_id: UUID, supervisor_id: UUID) -> None:
             await TelegramWebhookService.delete_webhook(token)
         except Exception as e:
             logger.warning("Failed to delete Telegram webhook for agent %s: %s", agent_id, e)
-
-    db = get_supabase_service_client()
-    db.table("interactions").delete().eq("agent_id", str(agent_id)).execute()
->>>>>>> b09ce7ab6a868db1a2bb87739d2182549f135ae9
 
     try:
         # Remove historical interactions first (archives cascade via FK)
@@ -345,16 +392,15 @@ async def delete_agent(agent_id: UUID, supervisor_id: UUID) -> None:
         raise
     except Exception as e:
         logger.error(f"Error deleting agent: {e}")
-<<<<<<< HEAD
         error_msg = str(e).lower()
         if "foreign key constraint" in error_msg or "violates foreign key" in error_msg:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Cannot delete agent that has existing interactions (history). Archive it instead.",
+                detail=(
+                    "Cannot delete agent because related records could not be removed. "
+                    "Try again after ending any active session, or contact support if this persists."
+                ),
             )
-
-=======
->>>>>>> b09ce7ab6a868db1a2bb87739d2182549f135ae9
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An internal database error occurred while deleting the agent.",
@@ -365,6 +411,8 @@ async def update_agent_with_telegram_webhook(
     agent_id: UUID,
     supervisor_id: UUID,
     request: UpdateAgentRequest,
+    *,
+    allowed_agent_type: AgentType | None = None,
 ) -> tuple[AgentModel, bool]:
     """
     Update an agent's configuration and automatically set up Telegram webhook if token is provided.
@@ -372,7 +420,9 @@ async def update_agent_with_telegram_webhook(
     Returns:
         Tuple of (updated_agent, webhook_set_successfully)
     """
-    agent = get_agent(agent_id, supervisor_id)
+    agent = get_agent(
+        agent_id, supervisor_id, allowed_agent_type=allowed_agent_type
+    )
     if (
         _is_status_only_update(request)
         and request.status in (AgentStatus.PAUSED, AgentStatus.IDLE)
@@ -381,7 +431,12 @@ async def update_agent_with_telegram_webhook(
         await release_agent_from_active_chats(agent_id)
 
     # First, update the agent normally
-    updated_agent = update_agent(agent_id, supervisor_id, request)
+    updated_agent = update_agent(
+        agent_id,
+        supervisor_id,
+        request,
+        allowed_agent_type=allowed_agent_type,
+    )
     
     # If Telegram token was provided, automatically set up the webhook
     webhook_set = False

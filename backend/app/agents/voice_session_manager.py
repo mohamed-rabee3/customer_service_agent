@@ -570,99 +570,138 @@ async def _handle_post_call(
     """
     Handle post-call processing after customer disconnects.
 
-    1. Generate conversation summary via LLM
-    2. Save summary and tags to DB
-    3. Update agent status to idle
+    Steps (each wrapped independently so a single failure cannot
+    poison the whole pipeline):
+      1. Resolve ``agent_db_id`` from the interaction row if missing.
+      2. Flip the agent row to ``IDLE``.
+      3. Mark the interaction ``completed`` / ``abandoned`` and stamp ``end_at``.
+      4. Run the LLM summarizer and persist summary + archive row.
+
+    The previous implementation wrapped everything in a single bare
+    ``except Exception`` that silently returned on the first error —
+    see migration 009 for context on the enum mismatch this caused.
     """
-    try:
-        from app.agents.base_agent import _get_client
+    from datetime import datetime, timezone
 
-        # Resolve agent_db_id from the interaction if metadata didn't carry it
-        if (not agent_db_id or agent_db_id == "unknown") and interaction_id:
-            try:
-                client = _get_client()
-                row = (
-                    client.table("interactions")
-                    .select("agent_id")
-                    .eq("id", interaction_id)
-                    .limit(1)
-                    .execute()
-                )
-                if row.data:
-                    agent_db_id = row.data[0]["agent_id"]
-                    logger.info(f"Resolved agent_db_id from interaction: {agent_db_id}")
-            except Exception as e:
-                logger.warning(f"Could not resolve agent_db_id: {e}")
+    from app.agents.base_agent import _get_client
+    from app.core.constants import InteractionStatus
 
-        # Update agent status to idle
-        if agent_db_id and agent_db_id != "unknown":
-            update_agent_status(agent_db_id, AgentStatus.IDLE)
-        else:
-            logger.error("Skipping agent status update — agent_db_id unknown")
-
-        # Update interaction status to completed
-        if interaction_id:
-            from app.agents.base_agent import _get_client
-            from datetime import datetime, timezone
-
+    # ── 1. Resolve agent_db_id (best effort) ──
+    if (not agent_db_id or agent_db_id == "unknown") and interaction_id:
+        try:
             client = _get_client()
-            now_utc = datetime.now(timezone.utc)
-
-            # ── Abandonment detection ──
-            # A call is abandoned if the transcript is empty (no conversation)
-            # or contains no agent replies (customer spoke but agent never responded).
-            snap = transcript_lines_snapshot or []
-            has_agent_reply = any(
-                line.startswith("Agent:") for line in snap
+            row = (
+                client.table("interactions")
+                .select("agent_id")
+                .eq("id", interaction_id)
+                .limit(1)
+                .execute()
             )
-            is_abandoned = len(snap) == 0 or not has_agent_reply
+            if row.data:
+                agent_db_id = row.data[0]["agent_id"]
+                logger.info(f"Resolved agent_db_id from interaction: {agent_db_id}")
+        except Exception as e:
+            logger.warning(f"Could not resolve agent_db_id: {e}")
 
-            update_payload: dict = {
-                "status": "abandoned" if is_abandoned else "completed",
-                "end_at": now_utc.isoformat(),
-                "is_abandoned": is_abandoned,
-            }
-            client.table("interactions").update(
-                update_payload
-            ).eq("id", interaction_id).execute()
+    # ── 2. Flip agent to IDLE (best effort) ──
+    if agent_db_id and agent_db_id != "unknown":
+        try:
+            update_agent_status(agent_db_id, AgentStatus.IDLE)
+        except Exception as e:
+            logger.error(f"Failed to set agent {agent_db_id} IDLE: {e}")
+    else:
+        logger.error("Skipping agent status update — agent_db_id unknown")
 
-            if is_abandoned:
-                logger.info(
-                    "Interaction %s marked as abandoned "
-                    "(transcript_lines=%d, has_agent_reply=%s)",
-                    interaction_id, len(snap), has_agent_reply,
-                )
-            else:
-                # Only run the expensive LLM summarization for real conversations
-                joined = "\n".join(snap)
-                (
-                    summary_text,
-                    issues_list,
-                    topic_tags,
-                    overall_perf,
-                    sentiment_groq,
-                ) = await asyncio.to_thread(summarize_voice_call_groq, joined)
-                save_interaction_summary(
-                    interaction_id=interaction_id,
-                    summary=summary_text,
-                    issues=issues_list,
-                    tags=topic_tags,
-                )
-                upsert_interaction_archive_record(
-                    interaction_id=interaction_id,
-                    summary=summary_text,
-                    overall_performance=overall_perf,
-                    sentiment=sentiment_groq,
-                    issues=issues_list,
-                    tags=topic_tags,
-                )
+    # ── 3. Mark interaction completed/abandoned (best effort) ──
+    if not interaction_id:
+        logger.error(
+            "Post-call: interaction_id is empty — cannot write status/end_at. "
+            "Agent %s flipped to IDLE but the call is orphaned.",
+            agent_db_id,
+        )
+        return
 
+    snap = transcript_lines_snapshot or []
+    has_agent_reply = any(line.startswith("Agent:") for line in snap)
+    is_abandoned = len(snap) == 0 or not has_agent_reply
+    final_status = (
+        InteractionStatus.ABANDONED.value
+        if is_abandoned
+        else InteractionStatus.COMPLETED.value
+    )
+
+    try:
+        now_utc = datetime.now(timezone.utc)
+        client = _get_client()
+        client.table("interactions").update({
+            "status": final_status,
+            "end_at": now_utc.isoformat(),
+            "is_abandoned": is_abandoned,
+        }).eq("id", interaction_id).execute()
         logger.info(
-            f"Post-call processing complete for agent {agent_db_id}, "
-            f"interaction {interaction_id}"
+            "Interaction %s marked %s "
+            "(transcript_lines=%d, has_agent_reply=%s)",
+            interaction_id, final_status, len(snap), has_agent_reply,
         )
     except Exception as e:
-        logger.error(f"Post-call processing failed: {e}")
+        logger.error(
+            "Post-call: failed to update interaction %s status to %s: %s",
+            interaction_id, final_status, e,
+        )
+
+    # ── 4. LLM summary + archive upsert (best effort, abandoned calls skipped) ──
+    if is_abandoned:
+        logger.info(
+            "Skipping LLM summary for abandoned interaction %s", interaction_id,
+        )
+        return
+
+    try:
+        joined = "\n".join(snap)
+        (
+            summary_text,
+            issues_list,
+            topic_tags,
+            overall_perf,
+            sentiment_groq,
+        ) = await asyncio.to_thread(summarize_voice_call_groq, joined)
+    except Exception as e:
+        logger.error(
+            "Post-call: Groq summarization failed for %s: %s", interaction_id, e,
+        )
+        return
+
+    try:
+        save_interaction_summary(
+            interaction_id=interaction_id,
+            summary=summary_text,
+            issues=issues_list,
+            tags=topic_tags,
+        )
+    except Exception as e:
+        logger.error(
+            "Post-call: failed to save summary for %s: %s", interaction_id, e,
+        )
+
+    try:
+        upsert_interaction_archive_record(
+            interaction_id=interaction_id,
+            summary=summary_text,
+            overall_performance=overall_perf,
+            sentiment=sentiment_groq,
+            issues=issues_list,
+            tags=topic_tags,
+        )
+    except Exception as e:
+        logger.error(
+            "Post-call: failed to upsert archive for %s: %s", interaction_id, e,
+        )
+
+    logger.info(
+        "Post-call processing finished for agent %s, interaction %s "
+        "(status=%s, transcript_lines=%d)",
+        agent_db_id, interaction_id, final_status, len(snap),
+    )
 
 
 if __name__ == "__main__":

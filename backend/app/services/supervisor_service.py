@@ -8,17 +8,13 @@ from fastapi import HTTPException, status
 from app.api.v1.schemas.supervisor import SupervisorCreate, SupervisorUpdate
 from app.core.constants import SupervisorType, UserRole
 from app.core.exceptions import ForbiddenException, NotFoundException
-<<<<<<< HEAD
 from app.core.auth_emails import (
     get_auth_profiles_for_user_ids,
     get_display_name_for_user_id,
     get_email_for_user_id,
     get_emails_for_user_ids,
 )
-from app.db.supabase import get_supabase_service_client
-=======
-from app.db.supabase import get_supabase_client, get_supabase_service_client, run_supabase_request
->>>>>>> b09ce7ab6a868db1a2bb87739d2182549f135ae9
+from app.db.supabase import get_supabase_service_client, run_supabase_request
 from app.repositories.supervisor_repository import SupervisorModel, supervisor_repository
 
 

@@ -9,7 +9,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from app.agents.chat_session_manager import ChatSessionManager
+from app.agents.base_agent import archive_chat_interaction
+from app.agents.chat_live_metrics import ChatLiveMetricsTracker
+from app.agents.chat_session_manager import (
+    ChatSessionManager,
+    apply_chat_whisper,
+    ensure_chat_session,
+)
 from app.api.deps import get_current_user
 from app.api.v1.schemas.auth import UserResponse
 from app.api.v1.schemas.chat import (
@@ -19,12 +25,39 @@ from app.api.v1.schemas.chat import (
     StartChatResponse,
     WhisperRequest,
 )
-from app.core.constants import AgentStatus, InteractionType, InteractionStatus
-from app.db.supabase import get_supabase_client
+from app.core.constants import AgentStatus, InteractionType, InteractionStatus, UserRole
+from app.db.supabase import get_supabase_client, get_supabase_service_client
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
+
+
+def _verify_chat_session_access(session_id: UUID, current_user: UserResponse) -> None:
+    """Ensure the user may read this interaction (service client bypasses RLS)."""
+    db = get_supabase_service_client()
+    interaction = (
+        db.table("interactions")
+        .select("id, agent_id")
+        .eq("id", str(session_id))
+        .limit(1)
+        .execute()
+    )
+    if not interaction.data:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+
+    if current_user.role == UserRole.ADMIN:
+        return
+
+    agent = (
+        db.table("agents")
+        .select("supervisor_id")
+        .eq("id", interaction.data[0]["agent_id"])
+        .limit(1)
+        .execute()
+    )
+    if not agent.data or str(agent.data[0]["supervisor_id"]) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Not authorized to view this session")
 
 
 # ─────────────────────────────────────────────
@@ -127,6 +160,8 @@ async def send_message(
     if not chat_agent:
         raise HTTPException(status_code=404, detail="Chat session not found or has ended")
 
+    await ChatSessionManager.record_activity(session_id)
+
     db = get_supabase_client()
 
     # 2. Store the customer message
@@ -137,6 +172,7 @@ async def send_message(
     }
     msg_result = db.table("chat_messages").insert(customer_msg).execute()
     customer_msg_data = msg_result.data[0] if msg_result.data else None
+    ChatLiveMetricsTracker.append_line(session_id, "Customer", request.content)
 
     # 3. Broadcast customer message to SSE subscribers
     await ChatSessionManager.broadcast_event(session_id, {
@@ -179,35 +215,14 @@ async def send_message(
             # Send done event
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
-            # 5. Run sentiment analysis in background
-            try:
-                metrics = await chat_agent.analyze_sentiment()
-
-                # Store metrics in realtime_metrics table
-                metrics_data = {
-                    "interaction_id": str(session_id),
-                    "sentiment": metrics["sentiment"],
-                    "satisfaction_score": metrics["satisfaction_score"],
-                    "feed_text": metrics["feed_text"],
-                }
-                db.table("realtime_metrics").insert(metrics_data).execute()
-
-                # Broadcast metrics to SSE subscribers
-                await ChatSessionManager.broadcast_event(session_id, {
-                    "type": "metrics",
-                    "data": metrics,
-                })
-
-                # Send metrics to the customer SSE stream too
-                yield f"data: {json.dumps({'type': 'metrics', **metrics})}\n\n"
-
-            except Exception as e:
-                logger.error(f"Sentiment analysis failed: {e}")
+            ChatLiveMetricsTracker.append_line(session_id, "Agent", full_response)
 
         except Exception as e:
             logger.error(f"Error streaming response: {e}")
             error_data = json.dumps({"type": "error", "content": "An error occurred"})
             yield f"data: {error_data}\n\n"
+        finally:
+            await ChatSessionManager.record_activity(session_id)
 
     return StreamingResponse(
         generate_sse(),
@@ -241,10 +256,34 @@ async def end_chat_session(
     db = get_supabase_client()
     now = datetime.now(timezone.utc).isoformat()
 
-    # 1. Update interaction status
+    # Capture transcript before tearing the in-memory session down
+    history = chat_agent.get_conversation_history()
+    transcript_lines: list[str] = []
+    for msg in history:
+        role = msg.get("role", "")
+        content = (msg.get("content") or "").strip()
+        if not content:
+            continue
+        if role == "user":
+            transcript_lines.append(f"Customer: {content}")
+        elif role == "assistant":
+            transcript_lines.append(f"Agent: {content}")
+        elif role == "supervisor":
+            transcript_lines.append(f"Supervisor: {content}")
+    joined_transcript = "\n".join(transcript_lines)
+    has_agent_reply = any(line.startswith("Agent:") for line in transcript_lines)
+    is_abandoned = len(transcript_lines) == 0 or not has_agent_reply
+    final_status = (
+        InteractionStatus.ABANDONED.value
+        if is_abandoned
+        else InteractionStatus.COMPLETED.value
+    )
+
+    # 1. Update interaction status (always run, even for abandoned chats)
     db.table("interactions").update({
-        "status": InteractionStatus.COMPLETED.value,
+        "status": final_status,
         "end_at": now,
+        "is_abandoned": is_abandoned,
     }).eq("id", str(session_id)).execute()
 
     # 2. Set agent back to idle
@@ -254,10 +293,16 @@ async def end_chat_session(
     }).eq("id", str(chat_agent.agent_id)).execute()
 
     # 3. End the in-memory session (notifies SSE subscribers)
-    # TODO: Add post-chat summarization here (similar to voice post-call processing
-    # in voice_session_manager.py — summarize conversation, extract tags/issues,
-    # and upsert into interaction_archives table)
     await ChatSessionManager.end_session(session_id)
+
+    # 4. Persist summary + archive (await so row is saved before response)
+    if not is_abandoned and joined_transcript:
+        try:
+            await archive_chat_interaction(str(session_id), joined_transcript)
+        except Exception as e:
+            logger.error("Failed to archive chat session %s: %s", session_id, e)
+    else:
+        logger.info("Chat %s marked abandoned — skipping archive", session_id)
 
     return {"status": "ended", "session_id": str(session_id)}
 
@@ -277,30 +322,10 @@ async def whisper_inject(
     current_user: Annotated[UserResponse, Depends(get_current_user)],
 ):
     """Inject a supervisor whisper instruction into active chat session."""
-    chat_agent = ChatSessionManager.get_session(session_id)
-    if not chat_agent:
+    try:
+        await apply_chat_whisper(session_id, request.content)
+    except ValueError:
         raise HTTPException(status_code=404, detail="Chat session not found or has ended")
-
-    # Inject the whisper
-    chat_agent.inject_whisper(request.content)
-
-    db = get_supabase_client()
-
-    # Store as a supervisor message
-    db.table("chat_messages").insert({
-        "interaction_id": str(session_id),
-        "role": "supervisor",
-        "content": request.content,
-    }).execute()
-
-    # Broadcast whisper event to SSE subscribers
-    await ChatSessionManager.broadcast_event(session_id, {
-        "type": "whisper",
-        "data": {
-            "content": request.content,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        },
-    })
 
     return {"status": "injected", "session_id": str(session_id)}
 
@@ -319,8 +344,11 @@ async def get_messages(
     current_user: Annotated[UserResponse, Depends(get_current_user)],
 ) -> list[ChatMessageResponse]:
     """Get all messages for a chat session."""
-    db = get_supabase_client()
+    _verify_chat_session_access(session_id, current_user)
 
+    # chat_messages has RLS enabled; webhooks insert via service role.
+    # Supervisors must read through service client after access check above.
+    db = get_supabase_service_client()
     result = (
         db.table("chat_messages")
         .select("*")
@@ -329,7 +357,7 @@ async def get_messages(
         .execute()
     )
 
-    return [ChatMessageResponse.model_validate(msg) for msg in result.data]
+    return [ChatMessageResponse.model_validate(msg) for msg in (result.data or [])]
 
 
 # ------------------------------------------

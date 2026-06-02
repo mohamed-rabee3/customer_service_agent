@@ -9,6 +9,15 @@ interface WebhookConfigs {
     instagram?: { enabled: boolean; business_account_id?: string; api_token?: string };
 }
 
+type AgentStatus = 'idle' | 'in_call' | 'in_chat' | 'paused';
+
+const AGENT_STATUS_OPTIONS: { value: AgentStatus; label: string }[] = [
+    { value: 'idle', label: 'Idle (Active)' },
+    { value: 'paused', label: 'Paused (Suspended)' },
+    { value: 'in_call', label: 'In Call' },
+    { value: 'in_chat', label: 'In Chat' },
+];
+
 interface FormModalProps {
     open: boolean;
     title: string;
@@ -17,24 +26,24 @@ interface FormModalProps {
         system_prompt: string; 
         telegram_bot_token?: string; 
         agent_type?: 'voice' | 'chat';
+        status?: AgentStatus;
         webhook_configs?: WebhookConfigs;
     };
-    onChange: (data: { 
-        name: string; 
-        system_prompt: string; 
-        telegram_bot_token?: string; 
-        agent_type?: 'voice' | 'chat';
-        webhook_configs?: WebhookConfigs;
-    }) => void;
+    onChange: (data: FormModalProps['formData']) => void;
     onSubmit: () => void;
     onClose: () => void;
     submitLabel: string;
     loading?: boolean;
     existingAgentId?: string;
     showAgentTypeField?: boolean;
+    showStatusField?: boolean;
+    isEdit?: boolean;
 }
 
-const AgentFormModal: React.FC<FormModalProps> = ({ open, title, formData, onChange, onSubmit, onClose, submitLabel, loading, existingAgentId, showAgentTypeField }) => {
+const AgentFormModal: React.FC<FormModalProps> = ({
+    open, title, formData, onChange, onSubmit, onClose, submitLabel, loading,
+    existingAgentId, showAgentTypeField, showStatusField, isEdit,
+}) => {
     const [animState, setAnimState] = useState<'entering' | 'exiting' | ''>('');
     const [activeTab, setActiveTab] = useState<'basic' | 'telegram' | 'whatsapp' | 'instagram'>('basic');
 
@@ -67,6 +76,23 @@ const AgentFormModal: React.FC<FormModalProps> = ({ open, title, formData, onCha
 
     if (!open && animState !== 'exiting') return null;
 
+    const isChatAgent = (formData.agent_type ?? 'chat') === 'chat';
+    const statusOptions = isEdit
+        ? AGENT_STATUS_OPTIONS
+        : AGENT_STATUS_OPTIONS.filter((o) => o.value === 'idle' || o.value === 'paused');
+    const statusLocked = isEdit && (formData.status === 'in_call' || formData.status === 'in_chat');
+
+    const tabs = [
+        { id: 'basic' as const, label: 'Basic', icon: 'file-lines' as IconProp, color: 'var(--text-muted)' },
+        ...(isChatAgent
+            ? [
+                { id: 'telegram' as const, label: 'Telegram', icon: ['fab', 'telegram'] as IconProp, color: '#0088cc' },
+                { id: 'whatsapp' as const, label: 'WhatsApp', icon: ['fab', 'whatsapp'] as IconProp, color: '#25D366' },
+                { id: 'instagram' as const, label: 'Instagram', icon: ['fab', 'instagram'] as IconProp, color: '#E1306C' },
+            ]
+            : []),
+    ];
+
     return (
         <div
             className={`agent-modal-overlay ${animState === 'entering' ? 'agent-modal-overlay--entering' : ''} ${animState === 'exiting' ? 'agent-modal-overlay--exiting' : ''}`}
@@ -92,12 +118,7 @@ const AgentFormModal: React.FC<FormModalProps> = ({ open, title, formData, onCha
 
                 {/* Tab Navigation */}
                 <div className="flex gap-2 mb-6 modal-stagger-2 overflow-x-auto pb-2">
-                    {[
-                        { id: 'basic', label: 'Basic', icon: 'file-lines' as IconProp, color: 'var(--text-muted)' },
-                        { id: 'telegram', label: 'Telegram', icon: ['fab', 'telegram'] as IconProp, color: '#0088cc' },
-                        { id: 'whatsapp', label: 'WhatsApp', icon: ['fab', 'whatsapp'] as IconProp, color: '#25D366' },
-                        { id: 'instagram', label: 'Instagram', icon: ['fab', 'instagram'] as IconProp, color: '#E1306C' },
-                    ].map((tab) => (
+                    {tabs.map((tab) => (
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id as any)}
@@ -151,6 +172,31 @@ const AgentFormModal: React.FC<FormModalProps> = ({ open, title, formData, onCha
                                     }}
                                 />
                             </div>
+                            {showStatusField && (
+                                <div>
+                                    <label className="text-xs font-semibold uppercase tracking-widest mb-1 block" style={{ color: 'var(--text-muted)' }}>Status</label>
+                                    <select
+                                        value={formData.status ?? 'idle'}
+                                        onChange={(e) => onChange({ ...formData, status: e.target.value as AgentStatus })}
+                                        disabled={statusLocked}
+                                        className="w-full px-4 py-3 rounded-xl border outline-none"
+                                        style={{
+                                            backgroundColor: 'var(--bg-dark)',
+                                            borderColor: 'var(--border)',
+                                            color: 'var(--text-main)',
+                                        }}
+                                    >
+                                        {statusOptions.map((opt) => (
+                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                        ))}
+                                    </select>
+                                    {statusLocked && (
+                                        <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                                            Status cannot be changed while the agent is in an active session.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
                             <div>
                                 <label className="text-xs font-semibold uppercase tracking-widest mb-1 block" style={{ color: 'var(--text-muted)' }}>System Prompt</label>
                                 <textarea

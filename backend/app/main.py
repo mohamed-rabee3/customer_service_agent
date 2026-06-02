@@ -1,18 +1,38 @@
 """FastAPI application entry point."""
 
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.agents.chat_session_manager import run_chat_idle_sweeper
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import BaseAppException
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start background tasks (chat idle sweeper) on startup."""
+    stop_event = asyncio.Event()
+    sweeper_task = asyncio.create_task(run_chat_idle_sweeper(stop_event))
+    yield
+    stop_event.set()
+    sweeper_task.cancel()
+    try:
+        await sweeper_task
+    except asyncio.CancelledError:
+        pass
+
 
 # Create FastAPI application
 app = FastAPI(
     title="Customer Service AI Agents Platform API",
     description="REST API for managing AI-powered customer service agents",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Configure CORS
