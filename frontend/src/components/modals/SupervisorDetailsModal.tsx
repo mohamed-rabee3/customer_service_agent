@@ -43,8 +43,8 @@ const SupervisorDetailsModal: React.FC<SupervisorDetailsModalProps> = ({
 }) => {
   if (!supervisor) return null;
 
-  const email = supervisor.email || `${supervisor.name.toLowerCase().replace(' ', '.')}@company.com`;
-  const phone = supervisor.phone || '+971 50 123 4567';
+  const email = supervisor.email || 'N/A';
+  const phone = supervisor.phone || 'N/A';
   const status = supervisor.status || 'Active';
   const employeeId = supervisor.employeeId || `EMP-${String(supervisor.id).padStart(4, '0')}`;
   const agentsCount = supervisor.agentsCount ?? 0;

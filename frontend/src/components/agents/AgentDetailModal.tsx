@@ -3,6 +3,7 @@ import { PhoneForwarded, Mic, X, Circle, TrendingUp, Smile, Info, CheckCircle, S
 import { toast } from 'react-toastify';
 import AgentAvatar from './AgentAvatar';
 import { agentsAPI } from '@/services/agentsService';
+import { interactionsAPI } from '@/services/interactionsService';
 
 const DEFAULT_FEED_IDLE = 'Waiting for call.';
 const DEFAULT_FEED_ACTIVE = 'Live interaction in progress.';
@@ -51,6 +52,7 @@ const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClose }) =
   const [whisperOpen, setWhisperOpen] = useState(false);
   const [whisperText, setWhisperText] = useState('');
   const [isSendingWhisper, setIsSendingWhisper] = useState(false);
+  const [isEndingCall, setIsEndingCall] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
   const whisperInputRef = useRef<HTMLInputElement>(null);
 
@@ -99,6 +101,28 @@ const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClose }) =
   const handleTakeOver = () => {
     setIsTakingOver(true);
     setTimeout(() => { setIsTakingOver(false); setTakenOver(true); toast.success(`You are now controlling the call with ${agent?.name}'s customer.`); }, 1500);
+  };
+
+  const handleEndCall = async () => {
+    const interactionId = agent?.current_interaction?.id as string | undefined;
+    if (!interactionId) {
+      setTakenOver(false);
+      handleClose();
+      toast.success('Call ended successfully (local).');
+      return;
+    }
+    setIsEndingCall(true);
+    try {
+      await interactionsAPI.updateStatus(interactionId, { status: 'completed' });
+      toast.success('Call ended successfully.');
+      setTakenOver(false);
+      handleClose();
+    } catch (err: any) {
+      console.error('Failed to end call', err);
+      toast.error(err?.response?.data?.detail ?? 'Failed to end call');
+    } finally {
+      setIsEndingCall(false);
+    }
   };
 
   const handleWhisperSend = async () => {
@@ -245,7 +269,7 @@ const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClose }) =
           {/* Take Over Call: Gradient dark with glow */}
           <button
             onClick={handleTakeOver}
-            disabled={isTakingOver || takenOver}
+            disabled={isTakingOver || takenOver || agent.status === 'idle' || agent.status === 'paused'}
             className="flex-1 flex items-center justify-center gap-3 font-bold text-sm cursor-pointer modal-stagger-btn-1 w-full sm:w-auto"
             style={{ 
               background: takenOver 
@@ -260,12 +284,12 @@ const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClose }) =
               boxShadow: takenOver 
                 ? '0 4px 20px rgba(16, 185, 129, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.15) inset'
                 : '0 4px 20px rgba(15, 23, 42, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1) inset',
-              opacity: isTakingOver ? 0.6 : 1,
+              opacity: (isTakingOver || agent.status === 'idle' || agent.status === 'paused') ? 0.6 : 1,
               letterSpacing: '0.02em',
               textShadow: '0 1px 2px rgba(0, 0, 0, 0.2)',
             }}
             onMouseEnter={(e) => { 
-              if (!takenOver && !isTakingOver) { 
+              if (!takenOver && !isTakingOver && agent.status !== 'idle' && agent.status !== 'paused') { 
                 e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
                 e.currentTarget.style.boxShadow = '0 12px 40px rgba(15, 23, 42, 0.35), 0 0 30px rgba(99, 102, 241, 0.15)'; 
                 e.currentTarget.style.background = 'linear-gradient(135deg, #1e293b 0%, #334155 50%, #475569 100%)';
@@ -286,6 +310,7 @@ const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClose }) =
           {/* Whisper: Glassmorphism white with dark hover */}
           <button
             onClick={() => setWhisperOpen(prev => !prev)}
+            disabled={agent.status === 'idle' || agent.status === 'paused'}
             className="flex-1 flex items-center justify-center gap-3 font-bold text-sm cursor-pointer modal-stagger-btn-2 w-full sm:w-auto"
             style={{ 
               background: 'rgba(255, 255, 255, 0.9)',
@@ -299,13 +324,16 @@ const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClose }) =
               transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
               boxShadow: '0 4px 20px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(255, 255, 255, 0.5) inset',
               letterSpacing: '0.02em',
+              opacity: (agent.status === 'idle' || agent.status === 'paused') ? 0.6 : 1,
             }}
             onMouseEnter={(e) => { 
-              e.currentTarget.style.background = 'linear-gradient(135deg, #0F172A 0%, #1e293b 50%, #334155 100%)'; 
-              e.currentTarget.style.color = '#fff';
-              e.currentTarget.style.border = 'none';
-              e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)'; 
-              e.currentTarget.style.boxShadow = '0 12px 40px rgba(15, 23, 42, 0.35), 0 0 30px rgba(99, 102, 241, 0.15)'; 
+              if (agent.status !== 'idle' && agent.status !== 'paused') {
+                e.currentTarget.style.background = 'linear-gradient(135deg, #0F172A 0%, #1e293b 50%, #334155 100%)'; 
+                e.currentTarget.style.color = '#fff';
+                e.currentTarget.style.border = 'none';
+                e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)'; 
+                e.currentTarget.style.boxShadow = '0 12px 40px rgba(15, 23, 42, 0.35), 0 0 30px rgba(99, 102, 241, 0.15)'; 
+              }
             }}
             onMouseLeave={(e) => { 
               e.currentTarget.style.background = 'rgba(255, 255, 255, 0.9)'; 
@@ -318,6 +346,41 @@ const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClose }) =
             <Mic size={18} />
             {whisperOpen ? 'Close Whisper' : 'Whisper'}
           </button>
+
+          {/* End Call Button */}
+          {(agent.status === 'in_call' || agent.status === 'in_chat') && (
+            <button
+              onClick={handleEndCall}
+              disabled={isEndingCall}
+              className="flex-1 flex items-center justify-center gap-3 font-bold text-sm cursor-pointer w-full sm:w-auto"
+              style={{
+                background: 'linear-gradient(135deg, #dc2626 0%, #ef4444 50%, #f87171 100%)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 16,
+                height: 54,
+                padding: '16px 28px',
+                transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                boxShadow: '0 4px 20px rgba(220, 38, 38, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1) inset',
+                opacity: isEndingCall ? 0.6 : 1,
+                letterSpacing: '0.02em',
+                textShadow: '0 1px 2px rgba(0, 0, 0, 0.2)',
+              }}
+              onMouseEnter={(e) => {
+                if (!isEndingCall) {
+                  e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
+                  e.currentTarget.style.boxShadow = '0 12px 40px rgba(220, 38, 38, 0.35), 0 0 30px rgba(220, 38, 38, 0.15)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = '';
+                e.currentTarget.style.boxShadow = '0 4px 20px rgba(220, 38, 38, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1) inset';
+              }}
+            >
+              <X size={18} />
+              {isEndingCall ? 'Ending…' : agent.status === 'in_call' ? 'End Call' : 'End Chat'}
+            </button>
+          )}
         </div>
       </div>
     </div>

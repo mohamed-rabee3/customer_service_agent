@@ -20,7 +20,8 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Chip
+  Chip,
+  TablePagination
 } from '@mui/material';
 import { X, Plus, Trash2, Edit } from 'lucide-react';
 import { supervisorsAPI } from '../../services/supervisorsService';
@@ -49,6 +50,9 @@ const SupervisorManagement: React.FC = () => {
   const [supervisors, setSupervisors] = useState<Supervisor[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [page, setPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
   
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -58,10 +62,13 @@ const SupervisorManagement: React.FC = () => {
   const [formData, setFormData] = useState({ email: '', password: '', supervisor_type: 'voice' as 'voice' | 'chat' });
 
   const fetchSupervisors = async () => {
+    setLoading(true);
     try {
-      const res = await supervisorsAPI.getAll();
+      const res = await supervisorsAPI.getAll(page, rowsPerPage);
       const data = res.data;
-      setSupervisors(data?.supervisors || data?.items || (Array.isArray(data) ? data : []));
+      const list = data?.supervisors || data?.items || (Array.isArray(data) ? data : []);
+      setSupervisors(list);
+      setTotalCount(data?.total ?? list.length);
     } catch (err) {
       toast.error('Failed to load supervisors');
     } finally {
@@ -71,7 +78,7 @@ const SupervisorManagement: React.FC = () => {
 
   useEffect(() => {
     fetchSupervisors();
-  }, []);
+  }, [page, rowsPerPage]);
 
   const resetForm = () => setFormData({ email: '', password: '', supervisor_type: 'voice' });
 
@@ -223,6 +230,24 @@ const SupervisorManagement: React.FC = () => {
               )}
             </TableBody>
           </Table>
+          <TablePagination
+            component="div"
+            count={totalCount}
+            page={page - 1}
+            onPageChange={(event, newPage) => setPage(newPage + 1)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(event) => {
+              setRowsPerPage(parseInt(event.target.value, 10));
+              setPage(1);
+            }}
+            rowsPerPageOptions={[5, 10, 20, 50]}
+            sx={{
+              color: 'var(--text-main)',
+              borderTop: '1px solid var(--border)',
+              '& .MuiTablePagination-actions': { color: 'var(--text-main)' },
+              '& .MuiTablePagination-select': { color: 'var(--text-main)' },
+            }}
+          />
         </TableContainer>
       )}
 

@@ -6,6 +6,7 @@ import {
   Paper,
   Stack,
   Chip,
+  TablePagination,
 } from '@mui/material';
 import { MessageSquare, ChevronDown, TrendingUp, Tag } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -73,13 +74,18 @@ const ChatArchive: React.FC<ChatArchiveProps> = ({ variant = 'standalone' }) => 
   const [chatLogs, setChatLogs] = useState<ChatLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
 
   useEffect(() => {
     const fetchArchives = async () => {
+      setLoading(true);
       try {
-        const res = await archivesAPI.getAll();
-        const payload = res.data as { data?: Record<string, unknown>[] };
+        const res = await archivesAPI.getAll(page, rowsPerPage);
+        const payload = res.data as { data?: Record<string, unknown>[], total?: number };
         const archives = Array.isArray(payload?.data) ? payload.data : [];
+        setTotalCount(payload?.total ?? archives.length);
         const mapped: ChatLog[] = archives
           .filter((a) => String((a as { type?: string }).type ?? '').toLowerCase() === 'chat')
           .map((a) => {
@@ -99,20 +105,20 @@ const ChatArchive: React.FC<ChatArchiveProps> = ({ variant = 'standalone' }) => 
             const rowId = String(row.id ?? '');
             const previewBase = row.message_preview ?? row.summary;
             return {
-            id: rowId,
-            customer: displayPhoneOrSynthetic(
-              rowId,
-              (row.phone_number ?? row.customer_name ?? row.caller) as string | undefined,
-            ),
-            time: started.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            date: started.toISOString().split('T')[0],
-            duration: dur,
-            messagePreview: String(previewBase ?? ''),
-            status: (row.status === 'completed' || row.status === 'resolved' ? 'Resolved' : row.status === 'pending' ? 'Pending' : 'Escalated') as ChatLog['status'],
-            satisfaction: Number(row.overall_performance ?? row.csat_score ?? row.satisfaction ?? 0) || 0,
-            summary: String(row.summary ?? ''),
-            tags: tagsArr,
-          };
+              id: rowId,
+              customer: displayPhoneOrSynthetic(
+                rowId,
+                (row.phone_number ?? row.customer_name ?? row.caller) as string | undefined,
+              ),
+              time: started.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              date: started.toISOString().split('T')[0],
+              duration: dur,
+              messagePreview: String(previewBase ?? ''),
+              status: (row.status === 'completed' || row.status === 'resolved' ? 'Resolved' : row.status === 'pending' ? 'Pending' : 'Escalated') as ChatLog['status'],
+              satisfaction: Number(row.overall_performance ?? row.csat_score ?? row.satisfaction ?? 0) || 0,
+              summary: String(row.summary ?? ''),
+              tags: tagsArr,
+            };
           });
         setChatLogs(mapped);
       } catch (err) {
@@ -122,7 +128,7 @@ const ChatArchive: React.FC<ChatArchiveProps> = ({ variant = 'standalone' }) => 
       }
     };
     fetchArchives();
-  }, []);
+  }, [page, rowsPerPage]);
 
   const toggleExpand = async (id: string) => {
     if (expandedId === id) {
@@ -335,6 +341,27 @@ const ChatArchive: React.FC<ChatArchiveProps> = ({ variant = 'standalone' }) => 
           </Typography>
         )}
       </Stack>
+
+      {!loading && chatLogs.length > 0 && (
+        <TablePagination
+          component="div"
+          count={totalCount}
+          page={page - 1}
+          onPageChange={(event, newPage) => setPage(newPage + 1)}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(event) => {
+            setRowsPerPage(parseInt(event.target.value, 10));
+            setPage(1);
+          }}
+          rowsPerPageOptions={[5, 10, 20, 50]}
+          sx={{
+            color: 'var(--text-main)',
+            mt: 3,
+            '& .MuiTablePagination-actions': { color: 'var(--text-main)' },
+            '& .MuiTablePagination-select': { color: 'var(--text-main)' },
+          }}
+        />
+      )}
     </Box>
   );
 };

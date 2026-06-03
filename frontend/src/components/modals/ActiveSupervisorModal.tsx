@@ -73,8 +73,8 @@ const ActiveSupervisorModal: React.FC<Props> = ({ open, onClose, supervisor }) =
   if (!supervisor) return null;
 
   const isActive = supervisor.activeCalls > 0;
-  const email = supervisor.email || `${supervisor.name.toLowerCase().replace(/\s/g, '.')}@company.com`;
-  const phone = supervisor.phone || '+971 50 123 4567';
+  const email = supervisor.email || 'N/A';
+  const phone = supervisor.phone || 'N/A';
 
   const handleSend = async () => {
     const text = inputValue.trim();

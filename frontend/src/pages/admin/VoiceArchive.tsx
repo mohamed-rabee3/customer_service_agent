@@ -6,6 +6,7 @@ import {
   Paper,
   Stack,
   Chip,
+  TablePagination,
 } from '@mui/material';
 import { Phone, Clock, ChevronDown, TrendingUp, Tag } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -75,17 +76,21 @@ interface VoiceArchiveProps {
   variant?: 'standalone' | 'section';
 }
 
-const VoiceArchive: React.FC<VoiceArchiveProps> = ({ variant = 'standalone' }) => {
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+const VoiceArchive: React.FC<VoiceArchiveProps> = ({ variant = 'standalone' }) => {  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [callLogs, setCallLogs] = useState<CallLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
 
   useEffect(() => {
     const fetchArchives = async () => {
+      setLoading(true);
       try {
-        const res = await archivesAPI.getAll();
-        const payload = res.data as { data?: Record<string, unknown>[] };
+        const res = await archivesAPI.getAll(page, rowsPerPage);
+        const payload = res.data as { data?: Record<string, unknown>[], total?: number };
         const archives = Array.isArray(payload?.data) ? payload.data : [];
+        setTotalCount(payload?.total ?? archives.length);
         const mapped: CallLog[] = archives
           .filter((a) => {
             const t = String((a as { type?: string }).type ?? '').toLowerCase();
@@ -102,20 +107,20 @@ const VoiceArchive: React.FC<VoiceArchiveProps> = ({ variant = 'standalone' }) =
                 : [];
             const rowId = String(row.id ?? '');
             return {
-            id: rowId,
-            caller: displayPhoneOrSynthetic(
-              rowId,
-              (row.phone_number ?? row.customer_name ?? row.caller) as string | undefined,
-            ),
-            time: started.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            date: started.toISOString().split('T')[0],
-            duration: formatDurationSeconds(row.duration_seconds as number | undefined),
-            status: (row.status === 'completed' ? 'Completed' : row.status === 'missed' ? 'Missed' : 'Failed') as CallLog['status'],
-            performance: Number(row.overall_performance ?? row.performance ?? 0) || 0,
-            satisfaction: Number(row.overall_performance ?? row.csat_score ?? row.satisfaction ?? 0) || 0,
-            summary: String(row.summary ?? ''),
-            tags: tagsArr,
-          };
+              id: rowId,
+              caller: displayPhoneOrSynthetic(
+                rowId,
+                (row.phone_number ?? row.customer_name ?? row.caller) as string | undefined,
+              ),
+              time: started.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              date: started.toISOString().split('T')[0],
+              duration: formatDurationSeconds(row.duration_seconds as number | undefined),
+              status: (row.status === 'completed' ? 'Completed' : row.status === 'missed' ? 'Missed' : 'Failed') as CallLog['status'],
+              performance: Number(row.overall_performance ?? row.performance ?? 0) || 0,
+              satisfaction: Number(row.overall_performance ?? row.csat_score ?? row.satisfaction ?? 0) || 0,
+              summary: String(row.summary ?? ''),
+              tags: tagsArr,
+            };
           });
         setCallLogs(mapped);
       } catch (err) {
@@ -125,7 +130,7 @@ const VoiceArchive: React.FC<VoiceArchiveProps> = ({ variant = 'standalone' }) =
       }
     };
     fetchArchives();
-  }, []);
+  }, [page, rowsPerPage]);
 
   const toggleExpand = (id: string) => {
     setExpandedId(prev => prev === id ? null : id);
@@ -277,6 +282,27 @@ const VoiceArchive: React.FC<VoiceArchiveProps> = ({ variant = 'standalone' }) =
           </Typography>
         )}
       </Stack>
+
+      {!loading && callLogs.length > 0 && (
+        <TablePagination
+          component="div"
+          count={totalCount}
+          page={page - 1}
+          onPageChange={(event, newPage) => setPage(newPage + 1)}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(event) => {
+            setRowsPerPage(parseInt(event.target.value, 10));
+            setPage(1);
+          }}
+          rowsPerPageOptions={[5, 10, 20, 50]}
+          sx={{
+            color: 'var(--text-main)',
+            mt: 3,
+            '& .MuiTablePagination-actions': { color: 'var(--text-main)' },
+            '& .MuiTablePagination-select': { color: 'var(--text-main)' },
+          }}
+        />
+      )}
     </Box>
   );
 };

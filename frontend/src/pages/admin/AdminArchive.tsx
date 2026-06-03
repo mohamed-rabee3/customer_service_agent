@@ -20,6 +20,7 @@ import {
   Drawer,
   Divider,
   Chip,
+  TablePagination,
 } from '@mui/material';
 import Icon from '../../components/Icon';
 import SupervisorFormModal from '../../components/modals/SupervisorFormModal';
@@ -33,7 +34,6 @@ import {
   faEdit,
   faTrash,
   faSearch,
-  faFilter,
   faPlus,
 } from '@fortawesome/free-solid-svg-icons';
 
@@ -85,13 +85,21 @@ const AdminArchive: React.FC = () => {
   /* Animate key to retrigger spring on filter change */
   const [animKey, setAnimKey] = useState(0);
 
+  /* Pagination state */
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
+
   // Fetch supervisors from API
   useEffect(() => {
     const fetchData = async () => {
+      setLoadingData(true);
       try {
-        const res = await supervisorsAPI.getAll();
-        const sups = res.data.supervisors || res.data.items || res.data || [];
+        const res = await supervisorsAPI.getAll(page + 1, rowsPerPage);
+        const data = res.data;
+        const sups = data.supervisors || data.items || data || [];
         const rawSups = Array.isArray(sups) ? sups : [];
+        setTotalCount(data.total ?? rawSups.length);
         
         const mappedData: Supervisor[] = [];
         for (const s of rawSups) {
@@ -111,7 +119,7 @@ const AdminArchive: React.FC = () => {
           
           mappedData.push({
             id: s.id,
-            name: s.email || 'Supervisor',
+            name: s.name || s.email || 'Supervisor',
             email: s.email || '',
             type: s.supervisor_type === 'voice' ? 'Voice' : 'Chat',
             status: 'Active',
@@ -130,7 +138,7 @@ const AdminArchive: React.FC = () => {
       }
     };
     fetchData();
-  }, []);
+  }, [page, rowsPerPage]);
 
   const filteredData = archiveData.filter((row) => {
     const matchesSearch = row.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -229,9 +237,6 @@ const AdminArchive: React.FC = () => {
                 <MenuItem value="chat">Chat</MenuItem>
               </Select>
             </FormControl>
-            <Button className="filter-button" variant="outlined" startIcon={<Icon icon={faFilter} />} sx={{ height: 56, px: 4, borderRadius: 'var(--radius-pill)', textTransform: 'none', fontWeight: 600, width: { xs: '100%', sm: 'auto' }, borderColor: 'var(--border)', color: 'var(--text-main)', bgcolor: 'var(--input-bg)', '&:hover': { borderColor: 'var(--primary)', bgcolor: 'rgba(33,52,72,0.05)' } }}>
-              Filter
-            </Button>
           </Stack>
         </Stack>
       </Paper>
@@ -292,6 +297,24 @@ const AdminArchive: React.FC = () => {
             )}
           </TableBody>
         </Table>
+        <TablePagination
+          component="div"
+          count={totalCount}
+          page={page}
+          onPageChange={(event, newPage) => setPage(newPage)}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(event) => {
+            setRowsPerPage(parseInt(event.target.value, 10));
+            setPage(0);
+          }}
+          rowsPerPageOptions={[5, 10, 20, 50]}
+          sx={{
+            color: 'var(--text-main)',
+            borderTop: '1px solid var(--border)',
+            '& .MuiTablePagination-actions': { color: 'var(--text-main)' },
+            '& .MuiTablePagination-select': { color: 'var(--text-main)' },
+          }}
+        />
       </TableContainer>
 
       {/* ═══ Slide-over Drawer (Quick View Panel) ═══ */}
@@ -324,6 +347,7 @@ const AdminArchive: React.FC = () => {
               <Box sx={{ mb: 4 }}>
                 <Typography variant="h5" fontWeight={800} color="var(--text-main)" sx={{ mb: 0.5 }}>{drawerSupervisor.name}</Typography>
                 <Typography variant="body2" color="var(--text-secondary)">{drawerSupervisor.email}</Typography>
+                <Typography variant="caption" color="var(--text-muted)" sx={{ display: 'block', mt: 0.5, fontFamily: 'monospace' }}>ID: {drawerSupervisor.id}</Typography>
                 <Stack direction="row" spacing={1} sx={{ mt: 1.5 }}>
                   <Chip label={drawerSupervisor.type} size="small" sx={{ bgcolor: 'rgba(84,119,146,0.1)', color: 'var(--accent-hex)', fontWeight: 600 }} />
                   <Chip label={drawerSupervisor.status} size="small" sx={{ bgcolor: drawerSupervisor.status === 'Active' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', color: drawerSupervisor.status === 'Active' ? '#22c55e' : 'var(--danger)', fontWeight: 600 }} />

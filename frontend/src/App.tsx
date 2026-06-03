@@ -82,7 +82,7 @@ function AppRoutes() {
         
         {/* Admin Only Routes */}
         <Route path="/issues" element={<AdminRoute><ArchiveIssues /></AdminRoute>} />
-        <Route path="/settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route path="/supervisors" element={<AdminRoute><SupervisorManagement /></AdminRoute>} />
         <Route path="/agent-config" element={<SupervisorRoute><AgentConfiguration /></SupervisorRoute>} />
 
