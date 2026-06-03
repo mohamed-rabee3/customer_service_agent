@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
     BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
     XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -61,6 +61,67 @@ const getSentimentLabel = (shift: number) => {
     if (shift < 0) return "Slightly Down";
     return "Stable";
 };
+
+// ── Skeleton Components ──
+
+function KpiCardSkeleton({ index }: { index: number }) {
+    return (
+        <div
+            className="relative overflow-hidden rounded-2xl p-5"
+            style={{
+                background: 'var(--glass-bg)',
+                backdropFilter: 'blur(var(--glass-blur))',
+                WebkitBackdropFilter: 'blur(var(--glass-blur))',
+                border: '1px solid var(--glass-border)',
+                animationDelay: `${index * 80}ms`,
+                animation: 'pulse 1.5s ease-in-out infinite',
+                opacity: 0.7,
+            }}
+        >
+            <div className="flex items-start justify-between mb-3">
+                <div className="w-10 h-10 rounded-xl animate-pulse"
+                    style={{ background: 'var(--bg-dark)', border: '1px solid var(--glass-border)' }} />
+            </div>
+            <div className="h-8 w-24 rounded animate-pulse mb-2" style={{ background: 'var(--bg-dark)' }} />
+            <div className="h-4 w-32 rounded animate-pulse" style={{ background: 'var(--bg-dark)' }} />
+        </div>
+    );
+}
+
+function ChartSkeleton({ delay = 0 }: { delay?: number }) {
+    return (
+        <div className="relative overflow-hidden rounded-2xl p-6"
+            style={{
+                background: 'var(--glass-bg)', backdropFilter: 'blur(var(--glass-blur))',
+                WebkitBackdropFilter: 'blur(var(--glass-blur))',
+                border: '1px solid var(--glass-border)',
+                animationDelay: `${delay}ms`,
+                animation: 'pulse 1.5s ease-in-out infinite',
+                opacity: 0.7,
+            }}
+        >
+            <div className="h-6 w-48 rounded animate-pulse mb-5" style={{ background: 'var(--bg-dark)' }} />
+            <div className="flex items-center justify-center" style={{ minHeight: 220 }}>
+                <div className="w-full h-48 rounded animate-pulse" style={{ background: 'var(--bg-dark)' }} />
+            </div>
+        </div>
+    );
+}
+
+function TableSkeleton() {
+    return (
+        <div className="space-y-3">
+            {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="h-12 rounded animate-pulse" style={{ 
+                    background: 'var(--bg-dark)',
+                    animationDelay: `${i * 100}ms`,
+                    animation: 'pulse 1.5s ease-in-out infinite',
+                    opacity: 0.7,
+                }} />
+            ))}
+        </div>
+    );
+}
 
 // ── KPI Card ──
 
@@ -210,6 +271,7 @@ const AnalyticsPage: React.FC = () => {
         voiceCount: number; chatCount: number;
         agents: AgentAnalyticsData[];
     }; peakHours: { hour: string; interactions: number }[] } }>>(new Map());
+    const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
     // Unified metrics state
     const [metrics, setMetrics] = useState<{
@@ -227,55 +289,53 @@ const AnalyticsPage: React.FC = () => {
     });
     const [peakHours, setPeakHours] = useState<{ hour: string; interactions: number }[]>([]);
 
-    useEffect(() => {
+    const fetchAnalytics = useCallback(async () => {
         setIsLoading(true);
-        const fetchAnalytics = async () => {
-            try {
-                if (!userId) return;
-                const apiPeriod = mapUiPeriodToApi(selectedPeriod);
-                const cacheKey = `${role}:${supervisorType}:${userId}:${apiPeriod}`;
-                const cached = cacheRef.current.get(cacheKey);
-                if (cached && Date.now() - cached.ts < 30000) {
-                    setMetrics(cached.payload.metrics);
-                    setPeakHours(cached.payload.peakHours);
-                    return;
-                }
+        try {
+            if (!userId) return;
+            const apiPeriod = mapUiPeriodToApi(selectedPeriod);
+            const cacheKey = `${role}:${supervisorType}:${userId}:${apiPeriod}`;
+            const cached = cacheRef.current.get(cacheKey);
+            if (cached && Date.now() - cached.ts < 30000) {
+                setMetrics(cached.payload.metrics);
+                setPeakHours(cached.payload.peakHours);
+                setIsLoading(false);
+                return;
+            }
 
-                if (role === "admin") {
-                    // Single backend call replaces N+1 loop
-                    const res = await analyticsAPI.getAdminOverview(apiPeriod);
-                    const d = res.data;
-                    const next = {
-                        fcr: Number(d.avg_fcr ?? 0) || 0,
-                        totalCalls: Number(d.total_interactions ?? 0) || 0,
-                        aht: Number(d.avg_handle_time ?? 0) || 0,
-                        csat: Number(d.overall_csat ?? 0) || 0,
-                        performance: Number(d.performance_score ?? 0) || 0,
-                        sentimentShift: Number(d.avg_sentiment_shift ?? 0) || 0,
-                        containment: Number(d.containment_rate ?? 0) || 0,
-                        escalationTime: Number(d.avg_escalation_resolution_time ?? 0) || 0,
-                        coachingFreq: Number(d.coaching_frequency ?? 0) || 0,
-                        chatResponseTime: Number(d.chat_avg_response_time ?? 0) || 0,
-                        chatResolution: Number(d.chat_resolution_rate ?? 0) || 0,
-                        voiceCount: Number(d.total_voice_interactions ?? 0) || 0,
-                        chatCount: Number(d.total_chat_interactions ?? 0) || 0,
-                        agents: [],
-                    };
-                    const nextPeak = Array.isArray(d.peak_interaction_hours)
-                        ? d.peak_interaction_hours.map((p) => ({
-                            hour: String(p.hour ?? ""),
-                            interactions: Number(p.interactions ?? 0) || 0,
-                        }))
-                        : [];
-                    setMetrics(next);
-                    setPeakHours(nextPeak);
-                    cacheRef.current.set(cacheKey, {
-                        ts: Date.now(),
-                        payload: { metrics: next, peakHours: nextPeak },
-                    });
-                    return;
-                }
-
+            if (role === "admin") {
+                // Single backend call replaces N+1 loop
+                const res = await analyticsAPI.getAdminOverview(apiPeriod);
+                const d = res.data;
+                const next = {
+                    fcr: Number(d.avg_fcr ?? 0) || 0,
+                    totalCalls: Number(d.total_interactions ?? 0) || 0,
+                    aht: Number(d.avg_handle_time ?? 0) || 0,
+                    csat: Number(d.overall_csat ?? 0) || 0,
+                    performance: Number(d.performance_score ?? 0) || 0,
+                    sentimentShift: Number(d.avg_sentiment_shift ?? 0) || 0,
+                    containment: Number(d.containment_rate ?? 0) || 0,
+                    escalationTime: Number(d.avg_escalation_resolution_time ?? 0) || 0,
+                    coachingFreq: Number(d.coaching_frequency ?? 0) || 0,
+                    chatResponseTime: Number(d.chat_avg_response_time ?? 0) || 0,
+                    chatResolution: Number(d.chat_resolution_rate ?? 0) || 0,
+                    voiceCount: Number(d.total_voice_interactions ?? 0) || 0,
+                    chatCount: Number(d.total_chat_interactions ?? 0) || 0,
+                    agents: [],
+                };
+                const nextPeak = Array.isArray(d.peak_interaction_hours)
+                    ? d.peak_interaction_hours.map((p) => ({
+                        hour: String(p.hour ?? ""),
+                        interactions: Number(p.interactions ?? 0) || 0,
+                    }))
+                    : [];
+                setMetrics(next);
+                setPeakHours(nextPeak);
+                cacheRef.current.set(cacheKey, {
+                    ts: Date.now(),
+                    payload: { metrics: next, peakHours: nextPeak },
+                });
+            } else {
                 // Supervisor view
                 const res = await analyticsAPI.getBySupervisor(userId, apiPeriod);
                 const d = res.data;
@@ -301,22 +361,37 @@ const AnalyticsPage: React.FC = () => {
                     ts: Date.now(),
                     payload: { metrics: next, peakHours: [] },
                 });
-            } catch (err) {
-                console.error("Failed to fetch analytics", err);
-                setMetrics({
-                    fcr: 0, totalCalls: 0, aht: 0, csat: 0, performance: 0,
-                    sentimentShift: 0, containment: 0, escalationTime: 0,
-                    coachingFreq: 0, chatResponseTime: 0, chatResolution: 0,
-                    voiceCount: 0, chatCount: 0, agents: [],
-                });
-                setPeakHours([]);
-            } finally {
-                setIsLoading(false);
+            }
+        } catch (err) {
+            console.error("Failed to fetch analytics", err);
+            setMetrics({
+                fcr: 0, totalCalls: 0, aht: 0, csat: 0, performance: 0,
+                sentimentShift: 0, containment: 0, escalationTime: 0,
+                coachingFreq: 0, chatResponseTime: 0, chatResolution: 0,
+                voiceCount: 0, chatCount: 0, agents: [],
+            });
+            setPeakHours([]);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [selectedPeriod, userId, role, supervisorType]);
+
+    useEffect(() => {
+        // Clear previous timer
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
+        }
+        // Debounce the fetch call by 500ms
+        debounceTimerRef.current = setTimeout(() => {
+            fetchAnalytics();
+        }, 500);
+        
+        return () => {
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
             }
         };
-        const t = setTimeout(fetchAnalytics, 200);
-        return () => clearTimeout(t);
-    }, [selectedPeriod, userId, role, supervisorType]);
+    }, [fetchAnalytics]);
 
     const channelData = [
         { name: "Voice", value: metrics.voiceCount, fill: "hsl(var(--primary))" },
@@ -377,19 +452,17 @@ const AnalyticsPage: React.FC = () => {
                         </select>
                     </div>
 
-                    {isLoading ? (
-                        <div className="flex flex-col items-center justify-center py-24">
-                            <div className="relative w-14 h-14 mb-5">
-                                <div className="absolute inset-0 rounded-full"
-                                    style={{ border: '3px solid var(--border)', borderTopColor: 'var(--text-main)',
-                                        animation: 'spin 0.8s linear infinite' }} />
-                            </div>
-                            <p className="text-base font-medium" style={{ color: 'var(--text-secondary)' }}>Loading analytics...</p>
-                        </div>
-                    ) : (
-                        <>
-                            {/* ── Primary KPI Grid ── */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
+                    {/* ── Primary KPI Grid ── */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
+                        {isLoading ? (
+                            <>
+                                <KpiCardSkeleton index={0} />
+                                <KpiCardSkeleton index={1} />
+                                <KpiCardSkeleton index={2} />
+                                <KpiCardSkeleton index={3} />
+                            </>
+                        ) : (
+                            <>
                                 <KpiCard value={`${fmt(metrics.fcr)}%`} label="First Contact Resolution"
                                     color={getColor(metrics.fcr)} icon={<Target size={20} strokeWidth={2} />} index={0} />
                                 <KpiCard value={metrics.totalCalls.toLocaleString()} label={totalInteractionsLabel}
@@ -400,10 +473,23 @@ const AnalyticsPage: React.FC = () => {
                                     icon={<Timer size={20} strokeWidth={2} />} index={2} />
                                 <KpiCard value={`${fmt(metrics.csat)}%`} label="Customer Satisfaction"
                                     color={getColor(metrics.csat)} icon={<HeartPulse size={20} strokeWidth={2} />} index={3} />
-                            </div>
+                            </>
+                        )}
+                    </div>
 
-                            {/* ── Secondary KPI Grid (channel-specific for supervisors) ── */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-8">
+                    {/* ── Secondary KPI Grid (channel-specific for supervisors) ── */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-8">
+                        {isLoading ? (
+                            <>
+                                <KpiCardSkeleton index={4} />
+                                <KpiCardSkeleton index={5} />
+                                {(isAdmin || isChatSupervisor) && <KpiCardSkeleton index={6} />}
+                                {(isAdmin || isChatSupervisor) && <KpiCardSkeleton index={7} />}
+                                {isVoiceSupervisor && <KpiCardSkeleton index={6} />}
+                                <KpiCardSkeleton index={8} />
+                            </>
+                        ) : (
+                            <>
                                 <KpiCard value={`${metrics.sentimentShift > 0 ? '+' : ''}${fmt(metrics.sentimentShift, 2)}`}
                                     label="Sentiment Shift" color={getSentimentColor(metrics.sentimentShift)}
                                     icon={metrics.sentimentShift >= 0 ? <Smile size={20} /> : <Frown size={20} />}
@@ -429,12 +515,17 @@ const AnalyticsPage: React.FC = () => {
                                 <KpiCard value={fmt(metrics.coachingFreq, 1)} label="Coaching per Agent"
                                     color="var(--text-main)" icon={<Users size={20} strokeWidth={2} />} index={8}
                                     subtitle="Whisper interventions" />
-                            </div>
+                            </>
+                        )}
+                    </div>
 
-                            {/* ── Charts Row ── */}
-                            <div className={`grid grid-cols-1 ${isAdmin ? 'lg:grid-cols-2' : ''} gap-6 mb-8`}>
-                                {/* Channel Distribution — admin only */}
-                                {isAdmin && (
+                    {/* ── Charts Row ── */}
+                    <div className={`grid grid-cols-1 ${isAdmin ? 'lg:grid-cols-2' : ''} gap-6 mb-8`}>
+                        {/* Channel Distribution — admin only */}
+                        {isAdmin && (
+                            isLoading ? (
+                                <ChartSkeleton delay={500} />
+                            ) : (
                                 <SectionCard title="Channel Distribution" delay={500}>
                                     <div className="flex items-center justify-center" style={{ minHeight: 220 }}>
                                         {(metrics.voiceCount + metrics.chatCount) > 0 ? (
@@ -457,73 +548,98 @@ const AnalyticsPage: React.FC = () => {
                                         )}
                                     </div>
                                 </SectionCard>
-                                )}
+                            )
+                        )}
 
-                                {/* Performance Overview */}
-                                <SectionCard title="Performance Overview" delay={600} className={!isAdmin ? 'max-w-2xl mx-auto w-full' : ''}>
-                                    <div className="flex flex-col items-center justify-center py-4">
-                                        <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
-                                            style={{ background: 'linear-gradient(135deg, hsl(var(--primary)/0.1), hsl(var(--primary)/0.05))' }}>
-                                            <Activity size={24} style={{ color: 'var(--text-main)' }} />
-                                        </div>
-                                        <div className="font-bold text-5xl md:text-6xl mb-3 transition-all"
-                                            style={{ color: getColor(metrics.performance), fontFamily: "'Inter', sans-serif", letterSpacing: '-0.02em' }}>
-                                            {fmt(metrics.performance, 0)}%
-                                        </div>
-                                        <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
-                                            {isAdmin ? 'System Performance' : isVoiceSupervisor ? 'Voice Team Performance' : 'Chat Team Performance'}
-                                        </p>
-                                        <div className="flex items-center gap-4 mt-4 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                            <span>Escalation Avg: {secondsToHms(metrics.escalationTime)}</span>
-                                        </div>
+                        {/* Performance Overview */}
+                        {isLoading ? (
+                            <ChartSkeleton delay={600} />
+                        ) : (
+                            <SectionCard title="Performance Overview" delay={600} className={!isAdmin ? 'max-w-2xl mx-auto w-full' : ''}>
+                                <div className="flex flex-col items-center justify-center py-4">
+                                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+                                        style={{ background: 'linear-gradient(135deg, hsl(var(--primary)/0.1), hsl(var(--primary)/0.05))' }}>
+                                        <Activity size={24} style={{ color: 'var(--text-main)' }} />
                                     </div>
-                                </SectionCard>
-                            </div>
+                                    <div className="font-bold text-5xl md:text-6xl mb-3 transition-all"
+                                        style={{ color: getColor(metrics.performance), fontFamily: "'Inter', sans-serif", letterSpacing: '-0.02em' }}>
+                                        {fmt(metrics.performance, 0)}%
+                                    </div>
+                                    <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+                                        {isAdmin ? 'System Performance' : isVoiceSupervisor ? 'Voice Team Performance' : 'Chat Team Performance'}
+                                    </p>
+                                    <div className="flex items-center gap-4 mt-4 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                        <span>Escalation Avg: {secondsToHms(metrics.escalationTime)}</span>
+                                    </div>
+                                </div>
+                            </SectionCard>
+                        )}
+                    </div>
 
-                            {/* ── Agent Comparison Table (Supervisor only) ── */}
-                            {isSupervisor && metrics.agents.length > 0 && (
+                    {/* ── Agent Comparison Table (Supervisor only) ── */}
+                    {isSupervisor && (
+                        isLoading ? (
+                            <SectionCard title="Agent Performance Breakdown" delay={700}>
+                                <TableSkeleton />
+                            </SectionCard>
+                        ) : (
+                            metrics.agents.length > 0 && (
                                 <SectionCard title="Agent Performance Breakdown" delay={700}>
                                     <AgentTable agents={metrics.agents} hideTypeColumn />
                                 </SectionCard>
-                            )}
+                            )
+                        )
+                    )}
 
-                            {/* ── Peak Interaction Time (Admin only) ── */}
-                            {isAdmin && (
-                                <div className="mt-6">
-                                    <SectionCard title="Peak Interaction Time" delay={750}>
-                                        {peakData.length > 0 ? (
-                                            <ResponsiveContainer width="100%" height={280}>
-                                                <LineChart data={peakData}>
-                                                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
-                                                    <XAxis dataKey="hour" stroke="var(--text-secondary)" tick={{ fontSize: 11 }} />
-                                                    <YAxis stroke="var(--text-secondary)" tick={{ fontSize: 11 }} />
-                                                    <Tooltip
-                                                        contentStyle={{
-                                                            backgroundColor: 'var(--surface)',
-                                                            border: '0.5px solid var(--border)',
-                                                            borderRadius: 'var(--radius-md)',
-                                                            fontFamily: "'Inter', sans-serif",
-                                                        }}
-                                                    />
-                                                    <Line
-                                                        type="monotone"
-                                                        dataKey="interactions"
-                                                        stroke="hsl(var(--primary))"
-                                                        strokeWidth={2}
-                                                        dot={{ r: 2 }}
-                                                        activeDot={{ r: 5 }}
-                                                    />
-                                                </LineChart>
-                                            </ResponsiveContainer>
-                                        ) : (
-                                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No peak-time data available</p>
-                                        )}
-                                    </SectionCard>
-                                </div>
-                            )}
+                    {/* ── Peak Interaction Time (Admin only) ── */}
+                    {isAdmin && (
+                        isLoading ? (
+                            <div className="mt-6">
+                                <ChartSkeleton delay={750} />
+                            </div>
+                        ) : (
+                            <div className="mt-6">
+                                <SectionCard title="Peak Interaction Time" delay={750}>
+                                    {peakData.length > 0 ? (
+                                        <ResponsiveContainer width="100%" height={280}>
+                                            <LineChart data={peakData}>
+                                                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
+                                                <XAxis dataKey="hour" stroke="var(--text-secondary)" tick={{ fontSize: 11 }} />
+                                                <YAxis stroke="var(--text-secondary)" tick={{ fontSize: 11 }} />
+                                                <Tooltip
+                                                    contentStyle={{
+                                                        backgroundColor: 'var(--surface)',
+                                                        border: '0.5px solid var(--border)',
+                                                        borderRadius: 'var(--radius-md)',
+                                                        fontFamily: "'Inter', sans-serif",
+                                                    }}
+                                                />
+                                                <Line
+                                                    type="monotone"
+                                                    dataKey="interactions"
+                                                    stroke="hsl(var(--primary))"
+                                                    strokeWidth={2}
+                                                    dot={{ r: 2 }}
+                                                    activeDot={{ r: 5 }}
+                                                />
+                                            </LineChart>
+                                        </ResponsiveContainer>
+                                    ) : (
+                                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No peak-time data available</p>
+                                    )}
+                                </SectionCard>
+                            </div>
+                        )
+                    )}
 
-                            {/* ── Agent Bar Chart (Supervisor only) ── */}
-                            {isSupervisor && metrics.agents.length > 1 && (
+                    {/* ── Agent Bar Chart (Supervisor only) ── */}
+                    {isSupervisor && (
+                        isLoading ? (
+                            <div className="mt-6">
+                                <ChartSkeleton delay={800} />
+                            </div>
+                        ) : (
+                            metrics.agents.length > 1 && (
                                 <div className="mt-6">
                                     <SectionCard title="Agent Comparison" delay={800}>
                                         <ResponsiveContainer width="100%" height={280}>
@@ -548,8 +664,8 @@ const AnalyticsPage: React.FC = () => {
                                         </ResponsiveContainer>
                                     </SectionCard>
                                 </div>
-                            )}
-                        </>
+                            )
+                        )
                     )}
                 </div>
             </div>
