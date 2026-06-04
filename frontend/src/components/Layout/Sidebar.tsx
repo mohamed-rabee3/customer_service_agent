@@ -11,6 +11,7 @@ import './Sidebar.css';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useUserProfile } from '../../context/UserProfileContext';
+import { useBrand } from '../../context/BrandContext';
 import { AnimatePresence, motion } from 'framer-motion';
 import ProfileDrawer from '../ProfileDrawer';
 
@@ -23,6 +24,7 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ onLogout, isOpen, onClose }) => {
     const { role, supervisorType } = useAuth();
     const { profile } = useUserProfile();
+    const { brand } = useBrand();
     const navigate = useNavigate();
     const location = useLocation();
     const [profileOpen, setProfileOpen] = useState(false);
@@ -63,7 +65,27 @@ const Sidebar: React.FC<SidebarProps> = ({ onLogout, isOpen, onClose }) => {
 
             <div className={`sidebar-drawer ${isOpen ? 'open' : ''}`}>
                 <div className="sidebar-header">
-                    <h1>Company Name</h1>
+                    {brand.logoUrl && (
+                        <img
+                            src={brand.logoUrl}
+                            alt={`${brand.companyName} logo`}
+                            className="sidebar-logo"
+                            style={{
+                                width: 48,
+                                height: 48,
+                                objectFit: 'contain',
+                                borderRadius: 'var(--radius-md)',
+                                margin: '0 auto 8px',
+                                display: 'block',
+                                opacity: 1,
+                                transition: 'opacity 0.3s ease',
+                            }}
+                        />
+                    )}
+                    <h1>{brand.companyName}</h1>
+                    <p className="sidebar-tagline" style={{ margin: '4px 0 0', fontSize: 11, lineHeight: 1.35, color: 'var(--text-muted)', fontWeight: 500 }}>
+                        {brand.tagline}
+                    </p>
                 </div>
 
                 <nav className="sidebar-nav">

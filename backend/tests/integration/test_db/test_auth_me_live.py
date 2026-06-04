@@ -44,7 +44,7 @@ def _auth_sign_in(client: Client, email: str, password: str) -> Tuple[str, Dict]
 
 def _call_auth_me(base_url: str, token: str) -> requests.Response:
     return requests.get(
-        f"{base_url}/auth/me",
+        f"{base_url}/v1/auth/me",
         headers={"Authorization": f"Bearer {token}"},
         timeout=15,
     )
@@ -89,7 +89,7 @@ def test_missing_token_rejected():
     """Ensure /auth/me rejects missing Authorization header."""
     base_url = os.environ.get("BACKEND_BASE_URL", "http://localhost:8000")
     try:
-        resp = requests.get(f"{base_url}/auth/me", timeout=5)
+        resp = requests.get(f"{base_url}/v1/auth/me", timeout=5)
         assert resp.status_code == 401
     except requests.exceptions.ConnectionError:
         pytest.skip("Backend server is not running. Start server to test this endpoint.")

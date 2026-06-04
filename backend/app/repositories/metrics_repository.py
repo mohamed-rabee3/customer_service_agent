@@ -1,2 +1,0 @@
-"""Real-time metrics repository."""
-

@@ -8,10 +8,6 @@ import {
   Avatar,
   Slider,
   Divider,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -20,20 +16,20 @@ import {
 } from '@mui/material';
 import { X, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Settings, Bell, Shield, Bot, Key, Check, Loader2 } from 'lucide-react';
+import { Settings, Bell, Shield, Bot, Check, Loader2 } from 'lucide-react';
 import { InputAdornment } from '@mui/material';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { settingsAPI } from '../../services/settingsService';
+import { useBrand, DEFAULT_TAGLINE } from '../../context/BrandContext';
 
-type SettingsTab = 'general' | 'notifications' | 'security' | 'ai' | 'api';
+type SettingsTab = 'general' | 'notifications' | 'security' | 'ai';
 
 const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
   { id: 'general', label: 'General', icon: <Settings size={18} /> },
   { id: 'notifications', label: 'Notifications', icon: <Bell size={18} /> },
   { id: 'security', label: 'Security', icon: <Shield size={18} /> },
   { id: 'ai', label: 'AI Configuration', icon: <Bot size={18} /> },
-  { id: 'api', label: 'API Keys', icon: <Key size={18} /> },
 ];
 
 // ─── Toggle Row ──────────────────────────────────
@@ -100,7 +96,9 @@ const SettingsPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
 
   // General
-  const [companyName, setCompanyName] = useState('Customer Service Platform');
+  const { updateBrand } = useBrand();
+  const [companyName, setCompanyName] = useState('OmniServa AI');
+  const [tagline, setTagline] = useState(DEFAULT_TAGLINE);
   const [supportEmail, setSupportEmail] = useState('support@company.com');
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [language, setLanguage] = useState('en');
@@ -197,11 +195,6 @@ const SettingsPage: React.FC = () => {
   const [maxConversations, setMaxConversations] = useState(5);
   const [autoAssign, setAutoAssign] = useState(true);
 
-  // API
-  const [apiKey, setApiKey] = useState('sk-proj-••••••••••••••••••••');
-  const [regenModalOpen, setRegenModalOpen] = useState(false);
-  const [regenLoading, setRegenLoading] = useState(false);
-
   useEffect(() => {
     const loadSettings = async () => {
       try {
@@ -209,6 +202,7 @@ const SettingsPage: React.FC = () => {
         const data = res.data;
         if (data) {
           if (data.companyName !== undefined) setCompanyName(data.companyName);
+          if (data.tagline !== undefined) setTagline(data.tagline);
           if (data.supportEmail !== undefined) setSupportEmail(data.supportEmail);
           if (data.logoPreview !== undefined) setLogoPreview(data.logoPreview);
           if (data.language !== undefined) setLanguage(data.language);
@@ -222,7 +216,6 @@ const SettingsPage: React.FC = () => {
           if (data.voiceSpeed !== undefined) setVoiceSpeed(data.voiceSpeed);
           if (data.maxConversations !== undefined) setMaxConversations(data.maxConversations);
           if (data.autoAssign !== undefined) setAutoAssign(data.autoAssign);
-          if (data.apiKey !== undefined) setApiKey(data.apiKey);
         }
       } catch (err) {
         console.error('Failed to load settings:', err);
@@ -233,11 +226,19 @@ const SettingsPage: React.FC = () => {
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => setLogoPreview(reader.result as string);
-      reader.readAsDataURL(file);
+    e.target.value = '';
+    if (!file) return;
+    // The logo is stored (base64) in the settings JSON, so keep it small.
+    if (file.size > 512 * 1024) {
+      toast.error('Logo is too large. Please choose an image under 512 KB.', {
+        position: 'top-right', autoClose: 4000, hideProgressBar: true,
+        style: { borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-family)', fontWeight: 600 },
+      });
+      return;
     }
+    const reader = new FileReader();
+    reader.onloadend = () => setLogoPreview(reader.result as string);
+    reader.readAsDataURL(file);
   };
 
   const handleSave = async () => {
@@ -245,6 +246,7 @@ const SettingsPage: React.FC = () => {
     try {
       await settingsAPI.update({
         companyName,
+        tagline,
         supportEmail,
         logoPreview,
         language,
@@ -258,8 +260,9 @@ const SettingsPage: React.FC = () => {
         voiceSpeed,
         maxConversations,
         autoAssign,
-        apiKey,
       });
+      // Push the brand live so the sidebar/login update without a refresh.
+      updateBrand({ companyName, tagline, logoUrl: logoPreview });
       toast.success('Settings saved successfully!', {
         position: 'top-right', autoClose: 3000, hideProgressBar: true,
         style: { borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-family)', fontWeight: 600 },
@@ -283,18 +286,11 @@ const SettingsPage: React.FC = () => {
             <Typography variant="h6" fontWeight={700} color="var(--text-main)" sx={{ mb: 0.5 }}>General</Typography>
             <Typography variant="body2" color="var(--text-secondary)" sx={{ mb: 3 }}>Manage your organization details</Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <FormControl fullWidth variant="outlined">
-                <InputLabel>Company Name</InputLabel>
-                <Select
-                  label="Company Name"
-                  value={companyName}
-                  onChange={e => setCompanyName(e.target.value as string)}
-                  sx={{ borderRadius: 'var(--radius-md)', background: 'var(--input-bg)' }}
-                >
-                  <MenuItem value=""><em>Select company...</em></MenuItem>
-                  <MenuItem value="Customer Service Platform">Customer Service Platform</MenuItem>
-                </Select>
-              </FormControl>
+              <TextField fullWidth label="Company Name" variant="outlined" value={companyName} onChange={e => setCompanyName(e.target.value)}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 'var(--radius-md)', background: 'var(--input-bg)' } }} />
+              <TextField fullWidth label="Tagline" variant="outlined" value={tagline} onChange={e => setTagline(e.target.value)}
+                helperText="Shown under the brand name on the login screen and sidebar"
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 'var(--radius-md)', background: 'var(--input-bg)' } }} />
               <TextField fullWidth label="Support Email" variant="outlined" type="email" value={supportEmail} onChange={e => setSupportEmail(e.target.value)}
                 sx={{ '& .MuiOutlinedInput-root': { borderRadius: 'var(--radius-md)', background: 'var(--input-bg)' } }} />
               <Box>
@@ -437,77 +433,6 @@ const SettingsPage: React.FC = () => {
             <SliderRow label="AI Confidence Threshold" desc="Minimum confidence level for AI auto-responses" value={aiConfidence} onChange={setAiConfidence} min={50} max={100} unit="%" />
             <SliderRow label="Voice Speed" desc="Playback speed for AI voice responses" value={voiceSpeed} onChange={setVoiceSpeed} min={0.5} max={2.0} step={0.1} unit="x" />
             <SliderRow label="Max Active Conversations" desc="Per-agent conversation limit" value={maxConversations} onChange={setMaxConversations} min={1} max={20} />
-          </motion.div>
-        );
-      case 'api':
-        return (
-          <motion.div key="api" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.25 }}>
-            <Typography variant="h6" fontWeight={700} color="var(--text-main)" sx={{ mb: 0.5 }}>API Keys</Typography>
-            <Typography variant="body2" color="var(--text-secondary)" sx={{ mb: 3 }}>Manage your integration keys</Typography>
-            <Box sx={{
-              p: 2.5, borderRadius: 'var(--radius-md)', border: '1px solid var(--border)',
-              background: 'var(--input-bg)',
-            }}>
-              <Typography variant="body2" fontWeight={600} color="var(--text-secondary)" sx={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5, mb: 1 }}>
-                Secret Key
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <Typography variant="body1" sx={{ fontFamily: 'monospace', color: 'var(--text-main)', fontSize: 14 }}>{apiKey}</Typography>
-                <Button size="small" onClick={() => setRegenModalOpen(true)} sx={{ fontSize: 12, textTransform: 'none', fontWeight: 600, color: 'var(--accent-hex)', minWidth: 'auto' }}>
-                  {pwT('Regenerate', 'إعادة توليد')}
-                </Button>
-              </Box>
-            </Box>
-            <Box sx={{ mt: 3 }}>
-              <Typography variant="body2" color="var(--text-muted)" sx={{ fontSize: 13 }}>
-                {pwT('Use this key to authenticate API requests. Keep it secret and rotate regularly.', 'استخدم هذا المفتاح لمصادقة طلبات API. حافظ على سريته وقم بتدويره بانتظام.')}
-              </Typography>
-            </Box>
-
-            {/* Regenerate API Key Confirmation Dialog */}
-            <Dialog open={regenModalOpen} onClose={() => !regenLoading && setRegenModalOpen(false)} maxWidth="xs" fullWidth
-              PaperProps={{ sx: { borderRadius: 'var(--radius-lg)', background: 'var(--glass-bg)', backdropFilter: 'blur(var(--glass-blur))', border: '1px solid var(--glass-border)', direction: language === 'ar' ? 'rtl' : 'ltr' } }}>
-              <DialogTitle sx={{ fontWeight: 700, fontFamily: 'var(--font-family)', color: 'var(--text-main)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                {pwT('Regenerate API Key?', 'هل تريد إعادة توليد مفتاح الـ API؟')}
-                <IconButton onClick={() => setRegenModalOpen(false)} size="small" disabled={regenLoading}><X size={18} /></IconButton>
-              </DialogTitle>
-              <DialogContent>
-                <Typography variant="body2" color="var(--text-secondary)" sx={{ fontSize: 13, lineHeight: 1.7 }}>
-                  {pwT(
-                    'This will immediately invalidate the current API key and generate a new one. Any applications or integrations using the old key will stop working until updated with the new key. Are you sure?',
-                    'سيؤدي هذا إلى إبطال المفتاح الحالي فورًا وتوليد مفتاح جديد. أي تطبيقات أو تكاملات تستخدم المفتاح القديم ستتوقف عن العمل حتى يتم تحديثها بالمفتاح الجديد. هل أنت متأكد؟'
-                  )}
-                </Typography>
-              </DialogContent>
-              <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
-                <Button onClick={() => setRegenModalOpen(false)} disabled={regenLoading} sx={{ borderRadius: 'var(--radius-md)', fontWeight: 600, fontSize: 13, textTransform: 'none', color: 'var(--text-secondary)' }}>
-                  {pwT('Cancel', 'إلغاء')}
-                </Button>
-                <Button variant="contained" disabled={regenLoading} onClick={async () => {
-                  setRegenLoading(true);
-                  try {
-                    // const { default: api } = await import('../../services/api');
-                    // const res = await api.post('/user/regenerate-key');
-                    const newKey = 'sk-proj-' + Array.from({ length: 32 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)]).join('');
-                    setApiKey(newKey);
-                    setRegenModalOpen(false);
-                    toast.success(pwT('API key regenerated successfully. Copy and update it in your applications now!', 'تم إعادة توليد مفتاح الـ API بنجاح. انسخه وحدّثه في تطبيقاتك الآن!'), {
-                      position: 'top-right', autoClose: 5000, hideProgressBar: true,
-                      style: { borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-family)', fontWeight: 600 },
-                    });
-                  } catch {
-                    toast.error(pwT('Failed to regenerate key. Please try again.', 'فشل إعادة توليد المفتاح. حاول مرة أخرى.'), {
-                      position: 'top-right', autoClose: 4000, hideProgressBar: true,
-                      style: { borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-family)', fontWeight: 600 },
-                    });
-                  } finally {
-                    setRegenLoading(false);
-                  }
-                }} sx={{ borderRadius: 'var(--radius-md)', fontWeight: 700, fontSize: 13, textTransform: 'none', background: '#ef4444', color: '#fff', '&:hover': { background: '#dc2626' }, '&:disabled': { opacity: 0.7 } }}>
-                  {regenLoading ? pwT('Regenerating...', 'جارٍ التوليد...') : pwT('Confirm Regenerate', 'تأكيد إعادة التوليد')}
-                </Button>
-              </DialogActions>
-            </Dialog>
           </motion.div>
         );
     }

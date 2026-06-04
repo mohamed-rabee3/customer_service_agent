@@ -39,7 +39,8 @@ async def get_settings(
 
     # Return default settings if none exists
     return {
-        "companyName": "Customer Service Platform",
+        "companyName": "OmniServa AI",
+        "tagline": "Agentic customer service system with human feedback",
         "supportEmail": "support@company.com",
         "logoPreview": None,
         "language": "en",
@@ -53,7 +54,6 @@ async def get_settings(
         "voiceSpeed": 1.0,
         "maxConversations": 5,
         "autoAssign": True,
-        "apiKey": "sk-proj-••••••••••••••••••••"
     }
 
 

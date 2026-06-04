@@ -1,2 +1,0 @@
-"""Utility function tests."""
-

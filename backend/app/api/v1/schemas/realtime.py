@@ -1,2 +1,0 @@
-"""Realtime metrics schemas."""
-

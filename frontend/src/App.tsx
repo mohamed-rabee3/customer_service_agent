@@ -6,6 +6,7 @@ import theme from './theme/theme';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { UserProfileProvider } from './context/UserProfileContext';
+import { BrandProvider } from './context/BrandContext';
 
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminArchive from './pages/admin/AdminArchive';
@@ -100,13 +101,15 @@ function App() {
     <ThemeProvider>
       <AuthProvider>
         <UserProfileProvider>
-          <MuiThemeProvider theme={theme}>
-            <CssBaseline />
-            <Router>
-              <AppRoutes />
-              <ToastContainer position="top-right" autoClose={3000} hideProgressBar newestOnTop closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="colored" />
-            </Router>
-          </MuiThemeProvider>
+          <BrandProvider>
+            <MuiThemeProvider theme={theme}>
+              <CssBaseline />
+              <Router>
+                <AppRoutes />
+                <ToastContainer position="top-right" autoClose={3000} hideProgressBar newestOnTop closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="colored" />
+              </Router>
+            </MuiThemeProvider>
+          </BrandProvider>
         </UserProfileProvider>
       </AuthProvider>
     </ThemeProvider>
