@@ -64,3 +64,33 @@ def generate_agent_token(room_name: str, agent_identity: str) -> str:
     )
     token.with_ttl(timedelta(hours=1))
     return token.to_jwt()
+
+
+def generate_supervisor_token(room_name: str, supervisor_identity: str) -> str:
+    """
+    Generate LiveKit access token for a supervisor monitoring/barging into a room.
+
+    Args:
+        room_name: Name of the LiveKit room
+        supervisor_identity: Unique identity for the supervisor participant
+
+    Returns:
+        JWT token string for the supervisor
+    """
+    token = api.AccessToken(
+        api_key=settings.livekit_api_key,
+        api_secret=settings.livekit_api_secret,
+    )
+    token.with_identity(supervisor_identity)
+    token.with_name(f"Supervisor-{supervisor_identity[:8]}")
+    token.with_grants(
+        api.VideoGrants(
+            room_join=True,
+            room=room_name,
+            can_publish=True,
+            can_subscribe=True,
+        )
+    )
+    token.with_ttl(timedelta(hours=1))
+    return token.to_jwt()
+

@@ -43,17 +43,24 @@ def list_supervisors(
     page: int = 1,
     limit: int = 20,
     supervisor_type: SupervisorType | None = None,
+    search: str | None = None,
 ) -> dict:
     """
     List all supervisors with pagination (Admin only).
     """
-    skip = (page - 1) * limit
-
-    supervisors, total = supervisor_repository.get_all_supervisors(
-        skip=skip,
-        limit=limit,
-        supervisor_type=supervisor_type,
-    )
+    if search:
+        supervisors, _ = supervisor_repository.get_all_supervisors(
+            skip=0,
+            limit=1000000,
+            supervisor_type=supervisor_type,
+        )
+    else:
+        skip = (page - 1) * limit
+        supervisors, total = supervisor_repository.get_all_supervisors(
+            skip=skip,
+            limit=limit,
+            supervisor_type=supervisor_type,
+        )
 
     supervisor_ids = [s.id for s in supervisors]
     email_map = get_emails_for_user_ids(supervisor_ids)
@@ -75,21 +82,35 @@ def list_supervisors(
                 continue
             agent_count_map[sid] = agent_count_map.get(sid, 0) + 1
 
+    all_details = [
+        {
+            "id": s.id,
+            "email": email_map.get(str(s.id)) or profile_map.get(str(s.id), {}).get("email") or "",
+            "name": s.name or profile_map.get(str(s.id), {}).get("name") or "",
+            "supervisor_type": s.supervisor_type,
+            "agent_count": agent_count_map.get(str(s.id), 0),
+            "performance_score": s.performance_score,
+            "total_interactions": s.total_interactions,
+            "created_at": s.created_at,
+            "updated_at": s.updated_at,
+        }
+        for s in supervisors
+    ]
+
+    if search:
+        search_lower = search.lower()
+        filtered_details = [
+            item for item in all_details
+            if search_lower in item["name"].lower() or search_lower in item["email"].lower()
+        ]
+        total = len(filtered_details)
+        skip = (page - 1) * limit
+        paginated_details = filtered_details[skip : skip + limit]
+    else:
+        paginated_details = all_details
+
     return {
-        "supervisors": [
-            {
-                "id": s.id,
-                "email": email_map.get(str(s.id)) or profile_map.get(str(s.id), {}).get("email") or "",
-                "name": s.name or profile_map.get(str(s.id), {}).get("name") or "",
-                "supervisor_type": s.supervisor_type,
-                "agent_count": agent_count_map.get(str(s.id), 0),
-                "performance_score": s.performance_score,
-                "total_interactions": s.total_interactions,
-                "created_at": s.created_at,
-                "updated_at": s.updated_at,
-            }
-            for s in supervisors
-        ],
+        "supervisors": paginated_details,
         "total": total,
         "page": page,
         "limit": limit,
@@ -175,7 +196,6 @@ def create_supervisor(data: SupervisorCreate) -> dict:
         .insert({
             "userID": str(auth_user.user.id),
             "supervisor_type": data.supervisor_type.value,
-            "name": data.name or "",
         })
         .execute()
     )

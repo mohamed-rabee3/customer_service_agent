@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { PhoneForwarded, Mic, X, Circle, TrendingUp, Smile, Info, CheckCircle, ShieldCheck, Send } from 'lucide-react';
+import { PhoneForwarded, Mic, X, Circle, TrendingUp, Smile, Info, ShieldCheck, Send, Volume2, Undo2 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { Room, RoomEvent } from 'livekit-client';
 import AgentAvatar from './AgentAvatar';
 import { agentsAPI } from '@/services/agentsService';
 import { interactionsAPI } from '@/services/interactionsService';
@@ -46,25 +47,110 @@ function parseFeedLine(feed: string): FeedLine | null {
 
 const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClose }) => {
   const [isExiting, setIsExiting] = useState(false);
-  const [isTakingOver, setIsTakingOver] = useState(false);
-  const [takenOver, setTakenOver] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
+  const [joined, setJoined] = useState(false);
+  const [audioBlocked, setAudioBlocked] = useState(false);
   const [feedLines, setFeedLines] = useState<FeedLine[]>([]);
   const [whisperOpen, setWhisperOpen] = useState(false);
   const [whisperText, setWhisperText] = useState('');
   const [isSendingWhisper, setIsSendingWhisper] = useState(false);
   const [isEndingCall, setIsEndingCall] = useState(false);
+  const [livekitRoom, setLivekitRoom] = useState<Room | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const whisperInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (agent) {
-      setTakenOver(false);
-      setIsTakingOver(false);
+      setJoined(false);
+      setIsJoining(false);
+      setAudioBlocked(false);
       setFeedLines([]);
       setWhisperText('');
       setWhisperOpen(false);
     }
   }, [agent?.id]);
+
+  useEffect(() => {
+    let activeRoom: Room | null = null;
+
+    const connectToLiveKit = async () => {
+      const interactionId = agent?.current_interaction?.id as string | undefined;
+      if (!agent || agent.status === 'idle' || !interactionId) {
+        return;
+      }
+
+      try {
+        console.log('Fetching supervisor LiveKit token...');
+        const res = await interactionsAPI.getSupervisorToken(interactionId);
+        const { livekit_token, livekit_url } = res.data;
+
+        console.log('Connecting to LiveKit room as supervisor...');
+        let lkUrl = String(livekit_url).trim();
+        if (lkUrl.startsWith('http://')) lkUrl = 'ws://' + lkUrl.slice(7);
+        if (lkUrl.startsWith('https://')) lkUrl = 'wss://' + lkUrl.slice(8);
+
+        const r = new Room({
+          adaptiveStream: true,
+          dynacast: true,
+        });
+
+        activeRoom = r;
+        setLivekitRoom(r);
+
+        r.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
+          if (track.kind === 'audio') {
+            console.log(`Subscribed to audio track from ${participant.identity}`);
+            const audioEl = track.attach();
+            audioEl.id = `lk-audio-${track.sid}`;
+            document.body.appendChild(audioEl);
+            // Browsers may block autoplay; if so, AudioPlaybackStatusChanged
+            // fires and we surface the "Enable audio" button below.
+            audioEl.play().catch(() => { /* playback gated — handled via startAudio */ });
+          }
+        });
+
+        r.on(RoomEvent.TrackUnsubscribed, (track) => {
+          if (track.kind === 'audio') {
+            const el = document.getElementById(`lk-audio-${track.sid}`);
+            if (el) el.remove();
+          }
+        });
+
+        // Reflect the browser's audio-playback permission state in the UI.
+        r.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+          setAudioBlocked(!r.canPlaybackAudio);
+        });
+
+        await r.connect(lkUrl, livekit_token, {
+          autoSubscribe: true,
+        });
+
+        setAudioBlocked(!r.canPlaybackAudio);
+        console.log('Successfully connected to LiveKit room as supervisor');
+      } catch (err: any) {
+        console.error('Failed to connect to LiveKit', err);
+        toast.error('Failed to connect to supervisor audio');
+      }
+    };
+
+    connectToLiveKit();
+
+    return () => {
+      if (activeRoom) {
+        console.log('Cleaning up LiveKit room connection...');
+        activeRoom.remoteParticipants.forEach((p) => {
+          p.audioTracks.forEach((pub) => {
+            if (pub.track) {
+              const el = document.getElementById(`lk-audio-${pub.track.sid}`);
+              if (el) el.remove();
+            }
+          });
+        });
+        activeRoom.disconnect();
+        setLivekitRoom(null);
+      }
+    };
+  }, [agent?.id, agent?.status]);
 
   useEffect(() => {
     if (!agent || agent.status === 'idle') {
@@ -98,24 +184,73 @@ const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClose }) =
     setTimeout(() => { setIsExiting(false); onClose(); }, 280);
   }, [onClose]);
 
-  const handleTakeOver = () => {
-    setIsTakingOver(true);
-    setTimeout(() => { setIsTakingOver(false); setTakenOver(true); toast.success(`You are now controlling the call with ${agent?.name}'s customer.`); }, 1500);
+  const handleJoin = async () => {
+    if (!livekitRoom) {
+      toast.error('Not connected to the call yet');
+      return;
+    }
+    setIsJoining(true);
+    try {
+      // Go live: enable the supervisor mic and tell the agent worker to mute
+      // its audio output (it keeps listening for context). Three-way call.
+      await livekitRoom.localParticipant.setMicrophoneEnabled(true);
+      await livekitRoom.localParticipant.publishData(
+        new TextEncoder().encode('{}'),
+        { reliable: true, topic: 'agent_mute' }
+      );
+      setIsJoining(false);
+      setJoined(true);
+      toast.success('You are now live on the call. The AI is muted and listening.');
+    } catch (err: any) {
+      console.error('Failed to join call', err);
+      toast.error('Failed to enable your microphone');
+      setIsJoining(false);
+    }
+  };
+
+  const handleHandBack = async () => {
+    if (!livekitRoom) return;
+    try {
+      // Hand back: mute the supervisor mic and tell the agent worker to resume.
+      await livekitRoom.localParticipant.setMicrophoneEnabled(false);
+      await livekitRoom.localParticipant.publishData(
+        new TextEncoder().encode('{}'),
+        { reliable: true, topic: 'agent_unmute' }
+      );
+      setJoined(false);
+      toast.success('Call handed back to the AI agent.');
+    } catch (err: any) {
+      console.error('Failed to hand back call', err);
+      toast.error('Failed to hand the call back');
+    }
+  };
+
+  const handleEnableAudio = async () => {
+    if (!livekitRoom) return;
+    try {
+      await livekitRoom.startAudio();
+      setAudioBlocked(!livekitRoom.canPlaybackAudio);
+    } catch (err) {
+      console.error('Failed to start audio playback', err);
+    }
   };
 
   const handleEndCall = async () => {
     const interactionId = agent?.current_interaction?.id as string | undefined;
     if (!interactionId) {
-      setTakenOver(false);
+      setJoined(false);
       handleClose();
       toast.success('Call ended successfully (local).');
       return;
     }
     setIsEndingCall(true);
     try {
+      if (livekitRoom) {
+        livekitRoom.disconnect();
+      }
       await interactionsAPI.updateStatus(interactionId, { status: 'completed' });
       toast.success('Call ended successfully.');
-      setTakenOver(false);
+      setJoined(false);
       handleClose();
     } catch (err: any) {
       console.error('Failed to end call', err);
@@ -158,9 +293,9 @@ const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClose }) =
           <div className="mb-4"><AgentAvatar name={agent.name} status={agent.status === 'idle' ? 'idle' : 'active'} size="lg" /></div>
           <h2 className="text-2xl font-bold" style={{ color: 'var(--text-main)' }}>{agent.name}</h2>
           <div className="flex items-center gap-2 mt-2">
-            <Circle size={8} fill={takenOver ? 'var(--accent)' : agent.status !== 'idle' ? 'var(--success)' : 'var(--text-muted)'} stroke="none" />
-            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: takenOver ? 'var(--accent)' : agent.status !== 'idle' ? 'var(--success)' : 'var(--text-muted)' }}>
-              {takenOver ? 'Supervisor Live' : (STATUS_LABEL[agent.status] ?? agent.status)}
+            <Circle size={8} fill={joined ? 'var(--accent)' : agent.status !== 'idle' ? 'var(--success)' : 'var(--text-muted)'} stroke="none" />
+            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: joined ? 'var(--accent)' : agent.status !== 'idle' ? 'var(--success)' : 'var(--text-muted)' }}>
+              {joined ? 'Supervisor Live' : (STATUS_LABEL[agent.status] ?? agent.status)}
             </span>
           </div>
         </div>
@@ -200,16 +335,30 @@ const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClose }) =
           </div>
         </div>
 
-        {/* Take Over overlay */}
-        {isTakingOver && (
+        {/* Audio playback blocked by browser autoplay policy — needs a user gesture */}
+        {audioBlocked && agent.status !== 'idle' && (
+          <button
+            onClick={handleEnableAudio}
+            className="w-full flex items-center justify-center gap-2 font-semibold text-sm cursor-pointer mb-4"
+            style={{
+              background: 'var(--accent)', color: '#fff', border: 'none',
+              borderRadius: 12, height: 46, letterSpacing: '0.02em',
+            }}
+          >
+            <Volume2 size={18} /> Enable audio to hear the call
+          </button>
+        )}
+
+        {/* Join / barge-in overlay */}
+        {isJoining && (
           <div className="takeover-overlay">
             <div className="takeover-spinner" />
-            <p className="text-sm font-semibold mt-3" style={{ color: 'var(--text-main)' }}>Transferring call control…</p>
+            <p className="text-sm font-semibold mt-3" style={{ color: 'var(--text-main)' }}>Joining the call…</p>
           </div>
         )}
-        {takenOver && (
+        {joined && (
           <div className="takeover-banner modal-stagger-3">
-            <ShieldCheck size={20} /><span className="text-sm font-semibold">You are now live on this call</span>
+            <ShieldCheck size={20} /><span className="text-sm font-semibold">You are live — the AI is muted and listening</span>
           </div>
         )}
 
@@ -266,13 +415,13 @@ const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClose }) =
 
         {/* Action Buttons - Premium Modern Style */}
         <div className="flex flex-col sm:flex-row gap-4">
-          {/* Take Over Call: Gradient dark with glow */}
+          {/* Join Call / Hand Back: Gradient dark with glow (green while live) */}
           <button
-            onClick={handleTakeOver}
-            disabled={isTakingOver || takenOver || agent.status === 'idle' || agent.status === 'paused'}
+            onClick={joined ? handleHandBack : handleJoin}
+            disabled={isJoining || agent.status === 'idle' || agent.status === 'paused'}
             className="flex-1 flex items-center justify-center gap-3 font-bold text-sm cursor-pointer modal-stagger-btn-1 w-full sm:w-auto"
             style={{ 
-              background: takenOver 
+              background: joined 
                 ? 'linear-gradient(135deg, #059669 0%, #10b981 50%, #34d399 100%)' 
                 : 'linear-gradient(135deg, #0F172A 0%, #1e293b 50%, #334155 100%)',
               color: '#fff',
@@ -281,30 +430,30 @@ const AgentDetailModal: React.FC<AgentDetailModalProps> = ({ agent, onClose }) =
               height: 54,
               padding: '16px 28px',
               transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              boxShadow: takenOver 
+              boxShadow: joined 
                 ? '0 4px 20px rgba(16, 185, 129, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.15) inset'
                 : '0 4px 20px rgba(15, 23, 42, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1) inset',
-              opacity: (isTakingOver || agent.status === 'idle' || agent.status === 'paused') ? 0.6 : 1,
+              opacity: (isJoining || agent.status === 'idle' || agent.status === 'paused') ? 0.6 : 1,
               letterSpacing: '0.02em',
               textShadow: '0 1px 2px rgba(0, 0, 0, 0.2)',
             }}
             onMouseEnter={(e) => { 
-              if (!takenOver && !isTakingOver && agent.status !== 'idle' && agent.status !== 'paused') { 
+              if (!joined && !isJoining && agent.status !== 'idle' && agent.status !== 'paused') { 
                 e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
                 e.currentTarget.style.boxShadow = '0 12px 40px rgba(15, 23, 42, 0.35), 0 0 30px rgba(99, 102, 241, 0.15)'; 
                 e.currentTarget.style.background = 'linear-gradient(135deg, #1e293b 0%, #334155 50%, #475569 100%)';
               } 
             }}
             onMouseLeave={(e) => { 
-              if (!takenOver) { 
+              if (!joined) { 
                 e.currentTarget.style.background = 'linear-gradient(135deg, #0F172A 0%, #1e293b 50%, #334155 100%)';
                 e.currentTarget.style.boxShadow = '0 4px 20px rgba(15, 23, 42, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1) inset';
               } 
               e.currentTarget.style.transform = '';
             }}
           >
-            {takenOver ? <CheckCircle size={20} /> : <PhoneForwarded size={20} />}
-            {takenOver ? 'Call Taken Over' : isTakingOver ? 'Connecting…' : 'Take Over Call'}
+            {joined ? <Undo2 size={20} /> : <PhoneForwarded size={20} />}
+            {joined ? 'Hand Back to AI' : isJoining ? 'Joining…' : 'Join Call'}
           </button>
           
           {/* Whisper: Glassmorphism white with dark hover */}

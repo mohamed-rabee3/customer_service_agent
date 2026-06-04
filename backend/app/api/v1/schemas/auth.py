@@ -15,6 +15,7 @@ class AdminProfile(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     name: str
+    avatar_url: str | None = None
     created_at: datetime | None = None
 
 
@@ -25,6 +26,7 @@ class SupervisorProfile(BaseModel):
 
     name: str
     supervisor_type: SupervisorType
+    avatar_url: str | None = None
     created_at: datetime | None = None
 
 
@@ -37,3 +39,17 @@ class UserResponse(BaseModel):
     email: EmailStr
     role: UserRole
     profile: Annotated[AdminProfile | SupervisorProfile, ...]
+
+
+class ProfileUpdateRequest(BaseModel):
+    """Request schema to update user profile."""
+    name: str | None = None
+    email: str | None = None
+    avatar_url: str | None = None
+
+
+class ChangePasswordRequest(BaseModel):
+    """Request schema to change user password."""
+    current_password: str
+    new_password: str
+

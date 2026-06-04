@@ -29,6 +29,7 @@ import { X, Clock, Phone, CheckCircle, AlertTriangle } from 'lucide-react';
 import { supervisorsAPI } from '../../services/supervisorsService';
 import { analyticsAPI } from '../../services/analyticsService';
 
+import { toast } from 'react-toastify';
 import {
   faInfoCircle,
   faEdit,
@@ -92,59 +93,64 @@ const AdminArchive: React.FC = () => {
 
   // Fetch supervisors from API
   useEffect(() => {
-    const fetchData = async () => {
-      setLoadingData(true);
-      try {
-        const res = await supervisorsAPI.getAll(page + 1, rowsPerPage);
-        const data = res.data;
-        const sups = data.supervisors || data.items || data || [];
-        const rawSups = Array.isArray(sups) ? sups : [];
-        setTotalCount(data.total ?? rawSups.length);
-        
-        const mappedData: Supervisor[] = [];
-        for (const s of rawSups) {
-          let interventions = 0;
-          let performance = 0;
-          let avgTime = '—';
+    const handler = setTimeout(() => {
+      const fetchData = async () => {
+        setLoadingData(true);
+        try {
+          const res = await supervisorsAPI.getAll(page + 1, rowsPerPage, typeFilter, searchTerm);
+          const data = res.data;
+          const sups = data.supervisors || data.items || data || [];
+          const rawSups = Array.isArray(sups) ? sups : [];
+          setTotalCount(data.total ?? rawSups.length);
+          
+          const mappedData: Supervisor[] = [];
+          let adminOverviewBreakdown: any[] = [];
           try {
-            const statRes = await analyticsAPI.getBySupervisor(s.id);
-            if (statRes.data) {
-                interventions = statRes.data.total_interactions ?? 0;
-                performance = Math.round(statRes.data.performance_score ?? 0);
-                avgTime = formatAvgHandleSeconds(statRes.data.avg_handle_time);
-            }
+            const statRes = await analyticsAPI.getAdminOverview('all_time');
+            adminOverviewBreakdown = statRes.data.supervisors_breakdown || [];
           } catch (e) {
-             console.error("Failed to load analytics for supervisor", s.id);
+             console.error("Failed to load admin overview analytics", e);
+          }
+
+          for (const s of rawSups) {
+            let interventions = 0;
+            let performance = 0;
+            let avgTime = '—';
+            
+            const sBreakdown = adminOverviewBreakdown.find((b: any) => b.supervisor_id === s.id);
+            if (sBreakdown) {
+                interventions = sBreakdown.total_interactions ?? 0;
+                performance = Math.round(sBreakdown.performance_score ?? 0);
+                avgTime = formatAvgHandleSeconds(sBreakdown.avg_handle_time);
+            }
+            
+            mappedData.push({
+              id: s.id,
+              name: s.name || s.email || 'Supervisor',
+              email: s.email || '',
+              type: s.supervisor_type === 'voice' ? 'Voice' : 'Chat',
+              status: 'Active',
+              interventions: interventions,
+              performance: performance,
+              avgTime,
+              failed: 0,
+            });
           }
           
-          mappedData.push({
-            id: s.id,
-            name: s.name || s.email || 'Supervisor',
-            email: s.email || '',
-            type: s.supervisor_type === 'voice' ? 'Voice' : 'Chat',
-            status: 'Active',
-            interventions: interventions,
-            performance: performance,
-            avgTime,
-            failed: 0,
-          });
+          setArchiveData(mappedData);
+        } catch (err) {
+          console.error('Failed to fetch supervisors', err);
+        } finally {
+          setLoadingData(false);
         }
-        
-        setArchiveData(mappedData);
-      } catch (err) {
-        console.error('Failed to fetch supervisors', err);
-      } finally {
-        setLoadingData(false);
-      }
-    };
-    fetchData();
-  }, [page, rowsPerPage]);
+      };
+      fetchData();
+    }, 300);
 
-  const filteredData = archiveData.filter((row) => {
-    const matchesSearch = row.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesType = typeFilter === 'all' || row.type.toLowerCase() === typeFilter;
-    return matchesSearch && matchesType;
-  });
+    return () => clearTimeout(handler);
+  }, [page, rowsPerPage, typeFilter, searchTerm]);
+
+  const filteredData = archiveData;
 
   /* Retrigger spring animation on filter changes */
   useEffect(() => {
@@ -169,21 +175,47 @@ const AdminArchive: React.FC = () => {
   };
 
   const handleEditClick = (sup: Supervisor) => { setSelectedSupervisor(sup); setEditModalOpen(true); };
-  const handleEditSubmit = (data: { name: string; type: 'voice' | 'chat'; email: string }) => {
+  const handleEditSubmit = async (data: { name: string; type: 'voice' | 'chat'; email: string }) => {
     if (!selectedSupervisor) return;
-    setArchiveData(prev => prev.map(item =>
-      item.id === selectedSupervisor.id
-        ? { ...item, name: data.name, email: data.email, type: data.type === 'voice' ? 'Voice' : 'Chat' }
-        : item
-    ));
+    try {
+      await supervisorsAPI.update(selectedSupervisor.id, {
+        name: data.name,
+        email: data.email,
+        supervisor_type: data.type === 'voice' ? 'voice' : 'chat',
+      });
+      setArchiveData(prev => prev.map(item =>
+        item.id === selectedSupervisor.id
+          ? { ...item, name: data.name, email: data.email, type: data.type === 'voice' ? 'Voice' : 'Chat' }
+          : item
+      ));
+    } catch (err) {
+      console.error('Failed to update supervisor', err);
+    }
     setEditModalOpen(false);
     setSelectedSupervisor(null);
   };
 
   const handleDeleteClick = (sup: Supervisor) => { setSelectedSupervisor(sup); setDeleteModalOpen(true); };
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     if (!selectedSupervisor) return;
-    setArchiveData(prev => prev.filter(item => item.id !== selectedSupervisor.id));
+    try {
+      await supervisorsAPI.delete(selectedSupervisor.id);
+      setArchiveData(prev => prev.filter(item => item.id !== selectedSupervisor.id));
+      toast.success('Supervisor deleted successfully!', {
+        position: 'top-right',
+        autoClose: 3000,
+        hideProgressBar: true,
+        style: { borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-family)', fontWeight: 600 }
+      });
+    } catch (err) {
+      console.error('Failed to delete supervisor', err);
+      toast.error('Failed to delete supervisor. Please try again.', {
+        position: 'top-right',
+        autoClose: 3000,
+        hideProgressBar: true,
+        style: { borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-family)', fontWeight: 600 }
+      });
+    }
     setDeleteModalOpen(false);
     setSelectedSupervisor(null);
   };

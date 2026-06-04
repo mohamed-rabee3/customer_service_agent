@@ -147,6 +147,7 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({ open, onClose }) => {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
   const [name, setName] = useState(profile.name);
   const [email, setEmail] = useState(profile.email);
   const [prevName, setPrevName] = useState(profile.name);
@@ -164,28 +165,59 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({ open, onClose }) => {
       setPrevEmail(profile.email);
       setEditing(false);
       setSaved(false);
+      setAvatarError('');
     }
   }, [open, profile.name, profile.email]);
 
   const handleSave = async () => {
     setSaving(true);
-    await new Promise(r => setTimeout(r, 1200));
-    // Update global context — Sidebar & TopBar update instantly
-    updateProfile({ name, email });
-    setPrevName(name);
-    setPrevEmail(email);
-    setSaving(false);
-    setSaved(true);
-    setEditing(false);
-    setTimeout(() => setSaved(false), 2000);
+    try {
+      const { default: api } = await import('../services/api');
+      await api.patch('/auth/profile', { name, email });
+      updateProfile({ name, email });
+      setPrevName(name);
+      setPrevEmail(email);
+      setSaved(true);
+      setEditing(false);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      console.error('Failed to save profile changes:', err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      updateProfile({ avatarUrl: url });
+    // Reset the input so re-selecting the same file still fires onChange
+    e.target.value = '';
+    if (!file) return;
+    setAvatarError('');
+
+    // Supabase stores the avatar (as base64) in auth user_metadata, which has a
+    // size limit. Guard client-side so the user gets feedback instead of a silent 400.
+    const MAX_BYTES = 1024 * 1024; // 1 MB
+    if (file.size > MAX_BYTES) {
+      setAvatarError('Image is too large. Please choose one under 1 MB.');
+      return;
     }
+
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64String = reader.result as string;
+      setSaving(true);
+      try {
+        const { default: api } = await import('../services/api');
+        await api.patch('/auth/profile', { avatar_url: base64String });
+        updateProfile({ avatarUrl: base64String });
+      } catch (err) {
+        console.error('Failed to upload avatar:', err);
+        setAvatarError('Could not upload image. Please try a smaller file.');
+      } finally {
+        setSaving(false);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   return (
@@ -249,6 +281,12 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({ open, onClose }) => {
                 onCameraClick={() => fileInputRef.current?.click()}
               />
               <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleAvatarChange} />
+
+              {avatarError && (
+                <span style={{ color: 'var(--danger, #d33)', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-family)', textAlign: 'center' }}>
+                  {avatarError}
+                </span>
+              )}
 
               {/* Role pill */}
               <motion.span

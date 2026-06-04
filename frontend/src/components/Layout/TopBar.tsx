@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import './TopBar.css';
-import { Bell, User, Search, Menu, Sun, Moon, X, Check, AlertTriangle, Shield, Database } from 'lucide-react';
+import { Bell, User, Menu, Sun, Moon, X, Check, AlertTriangle, Shield, Database } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useUserProfile } from '../../context/UserProfileContext';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -34,10 +34,6 @@ const TopBar = ({ onToggleSidebar }: TopBarProps) => {
                 <div className="topbar-left">
                     <div className="icon-wrapper" onClick={onToggleSidebar} data-tooltip="Menu">
                         <Menu size={20} />
-                    </div>
-                    <div className="Search-box" style={{ marginLeft: '20px' }}>
-                        <Search size={18} className="Search-icon" />
-                        <input type="text" placeholder="Search" style={{ textAlign: 'left' }} />
                     </div>
                 </div>
 

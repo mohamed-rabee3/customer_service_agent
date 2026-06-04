@@ -10,4 +10,7 @@ export const interactionsAPI = {
 
   updateStatus: (id: string, data: { status: string }) =>
     api.patch(`/interactions/${id}`, data),
+
+  getSupervisorToken: (id: string) =>
+    api.post(`/interactions/${id}/supervisor-token`),
 };

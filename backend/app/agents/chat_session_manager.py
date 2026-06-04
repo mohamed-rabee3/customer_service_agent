@@ -435,10 +435,10 @@ async def finalize_chat_session_on_idle(interaction_id: UUID) -> None:
         await ChatSessionManager.end_session(interaction_id)
 
         if not is_abandoned and joined_transcript:
-            from app.agents.base_agent import archive_chat_interaction
+            from app.services.archive_service import ArchiveService
 
             try:
-                await archive_chat_interaction(str(interaction_id), joined_transcript)
+                await ArchiveService().summarize_chat_session(interaction_id)
             except Exception as e:
                 logger.error(
                     "Failed to archive chat interaction %s: %s",
@@ -545,7 +545,8 @@ async def repair_completed_chats_missing_archive() -> None:
         joined = "\n".join(transcript_lines)
         try:
             logger.info("Backfilling archive for completed chat %s", iid)
-            await archive_chat_interaction(iid, joined)
+            from app.services.archive_service import ArchiveService
+            await ArchiveService().summarize_chat_session(UUID(iid))
         except Exception as e:
             logger.error("Archive backfill failed for %s: %s", iid, e)
 

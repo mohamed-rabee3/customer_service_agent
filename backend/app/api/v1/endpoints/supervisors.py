@@ -63,6 +63,7 @@ async def list_supervisors(
     supervisor_type: SupervisorType | None = Query(None, description="Filter by type"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
+    search: str | None = Query(None, description="Search by name or email"),
 ) -> SupervisorListResponse:
     """
     List all supervisors with pagination (Admin only).
@@ -75,6 +76,7 @@ async def list_supervisors(
         page=page,
         limit=limit,
         supervisor_type=supervisor_type,
+        search=search,
     )
 
     return SupervisorListResponse.model_validate(list_data)

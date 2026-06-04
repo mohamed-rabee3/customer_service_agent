@@ -298,7 +298,8 @@ async def end_chat_session(
     # 4. Persist summary + archive (await so row is saved before response)
     if not is_abandoned and joined_transcript:
         try:
-            await archive_chat_interaction(str(session_id), joined_transcript)
+            from app.services.archive_service import ArchiveService
+            await ArchiveService().summarize_chat_session(session_id)
         except Exception as e:
             logger.error("Failed to archive chat session %s: %s", session_id, e)
     else:

@@ -374,6 +374,27 @@ async def entrypoint(ctx: agents.JobContext):
     # Serialize whisper handling so overlapping say()/generate_reply() cannot interleave.
     whisper_lock = asyncio.Lock()
 
+    # Three-way barge-in state. When a supervisor joins the call, the AI agent
+    # stays in the room and keeps listening (transcribing) but its audio output
+    # is muted so it does not talk over the human. Handing the call back un-mutes
+    # it and prompts it to resume.
+    barge_state: dict[str, bool] = {"muted": False}
+
+    async def _resume_after_handback() -> None:
+        """Re-engage the agent after the supervisor hands the call back."""
+        async with whisper_lock:
+            try:
+                await session.generate_reply(
+                    instructions=(
+                        "The supervisor has handed the call back to you. Briefly "
+                        "acknowledge and continue helping the customer from where the "
+                        "conversation left off. Do not mention supervisors or that you "
+                        "were muted."
+                    )
+                )
+            except Exception as e:
+                logger.warning("Resume-after-handback reply failed: %s", e)
+
     # ── Live supervisor metrics (transcript line + Groq analysis) ─────
     transcript_lines: list[str] = []
     monitor_state: dict[str, asyncio.Task | None] = {"task": None}
@@ -420,6 +441,10 @@ async def entrypoint(ctx: agents.JobContext):
         text = (item.text_content or "").strip()
         if not text:
             return
+        # While the supervisor has barged in, the agent's output is muted — the
+        # customer never hears these replies, so don't surface them in the feed.
+        if item.role == "assistant" and barge_state["muted"]:
+            return
         label = "Customer" if item.role == "user" else "Agent"
         feed_line = f"{label}: {text}"
         transcript_lines.append(feed_line)
@@ -427,10 +452,17 @@ async def entrypoint(ctx: agents.JobContext):
             transcript_lines[:] = transcript_lines[-80:]
         schedule_metrics_flush(feed_line)
 
-    # ── Register whisper data message handler ──────────────────────────
+    # ── Register data message handler (whisper + barge-in mute/un-mute) ─
     @ctx.room.on("data_received")
     def on_data_received(data_packet: rtc.DataPacket):
-        """Handle incoming data messages (whisper instructions from supervisor)."""
+        """Handle incoming data messages from the supervisor.
+
+        Topics:
+          - ``whisper``      : coaching instructions merged into the agent prompt.
+          - ``agent_mute``   : supervisor barged in — interrupt + mute agent audio
+                               output (the agent keeps listening for context).
+          - ``agent_unmute`` : supervisor handed the call back — un-mute and resume.
+        """
         if data_packet.topic == "whisper":
             try:
                 whisper_data = json.loads(data_packet.data.decode("utf-8"))
@@ -455,6 +487,27 @@ async def entrypoint(ctx: agents.JobContext):
             except Exception as e:
                 logger.error(f"Failed to process whisper: {e}")
 
+        elif data_packet.topic == "agent_mute":
+            logger.info(f"Supervisor barged in — muting agent {agent_db_id} audio output")
+            barge_state["muted"] = True
+            try:
+                session.interrupt()
+            except Exception as e:
+                logger.warning(f"interrupt() on barge-in failed: {e}")
+            try:
+                session.output.set_audio_enabled(False)
+            except Exception as e:
+                logger.error(f"Failed to mute agent output: {e}")
+
+        elif data_packet.topic == "agent_unmute":
+            logger.info(f"Supervisor handed call back — un-muting agent {agent_db_id}")
+            barge_state["muted"] = False
+            try:
+                session.output.set_audio_enabled(True)
+            except Exception as e:
+                logger.error(f"Failed to un-mute agent output: {e}")
+            asyncio.create_task(_resume_after_handback())
+
     # ── Handle participant disconnect (end of interaction) ─────────────
     post_call_done = False
 
@@ -468,13 +521,23 @@ async def entrypoint(ctx: agents.JobContext):
 
     @ctx.room.on("participant_disconnected")
     def on_participant_disconnected(participant: rtc.RemoteParticipant):
-        """Handle customer disconnection — trigger post-call processing."""
-        if not participant.identity.startswith("agent-"):
+        """Handle customer disconnection — trigger post-call processing.
+
+        Only the customer leaving ends the call. A supervisor (identity = UUID)
+        joining to monitor/barge-in and then leaving must NOT terminate the call,
+        so we match the customer identity prefix explicitly rather than "not agent".
+        """
+        if participant.identity.startswith("customer-"):
             logger.info(
                 f"Customer disconnected from room {ctx.room.name}. "
                 "Starting post-call processing..."
             )
             asyncio.create_task(_run_post_call_once())
+        else:
+            logger.info(
+                f"Non-customer participant '{participant.identity}' left room "
+                f"{ctx.room.name} — call continues."
+            )
 
     # Shutdown callback — awaited by the runtime, so DB writes always complete
     # even if the room tears down immediately after the customer hangs up.

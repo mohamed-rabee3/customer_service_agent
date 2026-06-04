@@ -167,3 +167,32 @@ async def update_interaction(
         end_at=updated.end_at,
         duration_seconds=duration,
     )
+
+
+@router.post("/{interaction_id}/supervisor-token")
+async def get_supervisor_token(
+    interaction_id: UUID,
+    current_user: Annotated[UserResponse, Depends(get_current_user)],
+):
+    """Generate a LiveKit token for supervisor to monitor/barge into the interaction."""
+    if current_user.role not in (UserRole.SUPERVISOR, UserRole.ADMIN):
+        raise ForbiddenException("Only supervisors and admins can access monitoring tokens")
+
+    service = InteractionService()
+    interaction = service.get_interaction(interaction_id)
+    if not interaction.call_source_id:
+        raise HTTPException(status_code=400, detail="Interaction does not have an active call room")
+
+    from app.livekit.token_service import generate_supervisor_token
+    from app.core.config import settings
+
+    token = generate_supervisor_token(
+        room_name=interaction.call_source_id,
+        supervisor_identity=str(current_user.id),
+    )
+
+    return {
+        "livekit_token": token,
+        "livekit_url": settings.livekit_ws_url,
+    }
+

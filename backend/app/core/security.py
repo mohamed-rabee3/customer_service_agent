@@ -63,9 +63,11 @@ def _resolve_current_user_sync(token: str) -> UserResponse:
     user_data = response.user
     user_id_str = str(user_data.id)
     user_uuid = UUID(user_id_str)
+    user_metadata = getattr(user_data, "user_metadata", None) or {}
     display_name = _extract_display_name(
-        getattr(user_data, "user_metadata", None), user_data.email or ""
+        user_metadata, user_data.email or ""
     )
+    avatar_url = user_metadata.get("avatar_url") or user_metadata.get("avatarUrl")
 
     from app.db.supabase import request_jwt
 
@@ -85,6 +87,7 @@ def _resolve_current_user_sync(token: str) -> UserResponse:
         admin_row = admin_result.data[0]
         profile = AdminProfile(
             name=display_name,
+            avatar_url=avatar_url,
             created_at=_parse_datetime(admin_row.get("created_at")),
         )
         return UserResponse(
@@ -115,6 +118,7 @@ def _resolve_current_user_sync(token: str) -> UserResponse:
         profile = SupervisorProfile(
             name=display_name,
             supervisor_type=supervisor_enum,
+            avatar_url=avatar_url,
             created_at=_parse_datetime(supervisor_row.get("created_at")),
         )
         return UserResponse(

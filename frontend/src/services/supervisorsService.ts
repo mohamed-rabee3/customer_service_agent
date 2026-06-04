@@ -9,7 +9,13 @@ export const supervisorsAPI = {
     supervisor_type: 'voice' | 'chat';
   }) => api.post('/supervisors', data),
 
-  getAll: (page?: number, limit?: number) => api.get('/supervisors', { params: { page, limit } }),
+  getAll: (page?: number, limit?: number, type?: string, search?: string) => 
+    api.get('/supervisors', { params: { 
+      page, 
+      limit, 
+      supervisor_type: type === 'all' ? undefined : type, 
+      search 
+    } }),
 
   getById: (id: string) => api.get(`/supervisors/${id}`),
 

@@ -1,5 +1,4 @@
-// src/pages/admin/SettingsPage.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -25,6 +24,7 @@ import { Settings, Bell, Shield, Bot, Key, Check, Loader2 } from 'lucide-react';
 import { InputAdornment } from '@mui/material';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { settingsAPI } from '../../services/settingsService';
 
 type SettingsTab = 'general' | 'notifications' | 'security' | 'ai' | 'api';
 
@@ -153,23 +153,19 @@ const SettingsPage: React.FC = () => {
     setPwError('');
     setPwSaving(true);
     try {
-      // TODO: Replace with real API call when backend is available
-      // const { default: api } = await import('../../services/api');
-      // await api.patch('/user/password', { current_password: currentPw, new_password: newPw });
-      await new Promise(resolve => setTimeout(resolve, 800));
+      const { default: api } = await import('../../services/api');
+      await api.patch('/auth/change-password', { current_password: currentPw, new_password: newPw });
       toast.success(pwT('Password changed successfully!', 'تم تغيير كلمة المرور بنجاح!'), {
         position: 'top-right', autoClose: 3000, hideProgressBar: true,
         style: { borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-family)', fontWeight: 600 },
       });
       closePwModal();
-    } catch (err: unknown) {
+    } catch (err: any) {
       console.error('Change password error:', err?.response || err);
       const status = err?.response?.status;
-      const backendMsg = err?.response?.data?.message;
-      if (status === 401 || status === 403) {
-        setPwError(pwT('Current password is incorrect.', 'كلمة المرور الحالية غير صحيحة.'));
-      } else if (status === 400 && backendMsg) {
-        setPwError(backendMsg);
+      const backendMsg = err?.response?.data?.detail || err?.response?.data?.message;
+      if (status === 401 || status === 403 || status === 400) {
+        setPwError(backendMsg || pwT('Current password is incorrect.', 'كلمة المرور الحالية غير صحيحة.'));
       } else if (status === 422) {
         setPwError(pwT('Password does not meet requirements.', 'كلمة المرور لا تستوفي المتطلبات.'));
       } else {
@@ -206,6 +202,35 @@ const SettingsPage: React.FC = () => {
   const [regenModalOpen, setRegenModalOpen] = useState(false);
   const [regenLoading, setRegenLoading] = useState(false);
 
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const res = await settingsAPI.get();
+        const data = res.data;
+        if (data) {
+          if (data.companyName !== undefined) setCompanyName(data.companyName);
+          if (data.supportEmail !== undefined) setSupportEmail(data.supportEmail);
+          if (data.logoPreview !== undefined) setLogoPreview(data.logoPreview);
+          if (data.language !== undefined) setLanguage(data.language);
+          if (data.emailNotif !== undefined) setEmailNotif(data.emailNotif);
+          if (data.pushNotif !== undefined) setPushNotif(data.pushNotif);
+          if (data.inAppNotif !== undefined) setInAppNotif(data.inAppNotif);
+          if (data.twoFactor !== undefined) setTwoFactor(data.twoFactor);
+          if (data.sessionTimeout !== undefined) setSessionTimeout(data.sessionTimeout);
+          if (data.aiBargeIn !== undefined) setAiBargeIn(data.aiBargeIn);
+          if (data.aiConfidence !== undefined) setAiConfidence(data.aiConfidence);
+          if (data.voiceSpeed !== undefined) setVoiceSpeed(data.voiceSpeed);
+          if (data.maxConversations !== undefined) setMaxConversations(data.maxConversations);
+          if (data.autoAssign !== undefined) setAutoAssign(data.autoAssign);
+          if (data.apiKey !== undefined) setApiKey(data.apiKey);
+        }
+      } catch (err) {
+        console.error('Failed to load settings:', err);
+      }
+    };
+    loadSettings();
+  }, []);
+
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -217,12 +242,37 @@ const SettingsPage: React.FC = () => {
 
   const handleSave = async () => {
     setSaving(true);
-    await new Promise(resolve => setTimeout(resolve, 1200));
-    setSaving(false);
-    toast.success('Settings saved successfully!', {
-      position: 'top-right', autoClose: 3000, hideProgressBar: true,
-      style: { borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-family)', fontWeight: 600 },
-    });
+    try {
+      await settingsAPI.update({
+        companyName,
+        supportEmail,
+        logoPreview,
+        language,
+        emailNotif,
+        pushNotif,
+        inAppNotif,
+        twoFactor,
+        sessionTimeout,
+        aiBargeIn,
+        aiConfidence,
+        voiceSpeed,
+        maxConversations,
+        autoAssign,
+        apiKey,
+      });
+      toast.success('Settings saved successfully!', {
+        position: 'top-right', autoClose: 3000, hideProgressBar: true,
+        style: { borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-family)', fontWeight: 600 },
+      });
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+      toast.error('Failed to save settings. Please try again.', {
+        position: 'top-right', autoClose: 3000, hideProgressBar: true,
+        style: { borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-family)', fontWeight: 600 },
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const renderContent = () => {
