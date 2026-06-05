@@ -32,7 +32,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 768M
+          # 768M is too low (same image includes livekit/numpy); Core 2 Duo + 6GB host needs swap
+          memory: 1536M
 
   voice-agent:
     build: .
@@ -48,8 +49,8 @@ services:
       # Override Windows host paths from .env when using Docker:
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp-credentials.json
     volumes:
-      # Place service-account JSON next to this file or set GCP_KEY_FILE in .env
-      - ${GCP_KEY_FILE:-./gcp-service-account.json}:/run/secrets/gcp-credentials.json:ro
+      # Host path → fixed path inside container (override with GCP_KEY_FILE in .env)
+      - ${GCP_KEY_FILE:-./secret-google/omniserva-ai-7258b456c513.json}:/run/secrets/gcp-credentials.json:ro
     command:
       - python
       - -m

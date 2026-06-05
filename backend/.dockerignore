@@ -9,6 +9,8 @@ __pycache__/
 .env
 .env.*
 !.env.example
+secret-google/
+gcp-service-account.json
 .git/
 .gitignore
 tests/

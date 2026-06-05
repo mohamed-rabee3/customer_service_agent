@@ -247,14 +247,20 @@ Keep containers bound to localhost-only exposure if you prefer: change compose p
    nano .env   # Supabase, LiveKit, Groq, Vertex settings
    ```
 
-3. Copy your GCP service account JSON and point compose at it:
+3. Place your GCP service account JSON under `backend/secret-google/` (gitignored), e.g.:
+   `secret-google/omniserva-ai-7258b456c513.json`
+
    ```bash
-   cp /path/to/your-key.json ./gcp-service-account.json
-   # optional: export GCP_KEY_FILE=/other/path/key.json
+   mkdir -p secret-google
+   cp /path/to/your-key.json secret-google/omniserva-ai-7258b456c513.json
+   chmod 600 secret-google/omniserva-ai-7258b456c513.json
+   file secret-google/omniserva-ai-7258b456c513.json
    ```
-   In `.env` for Docker, set:
+
+   In `.env` for Docker:
    ```bash
    GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp-credentials.json
+   GCP_KEY_FILE=./secret-google/omniserva-ai-7258b456c513.json
    DEBUG=false
    CORS_ORIGINS=https://app.yourdomain.com
    WEBHOOK_DOMAIN=https://api.yourdomain.com
@@ -273,6 +279,14 @@ Keep containers bound to localhost-only exposure if you prefer: change compose p
 5. **Firewall:** with Cloudflare Tunnel + NPM you usually **do not** publish 8082/8083 on the WAN; keep them on LAN/localhost only. Test locally: `curl http://127.0.0.1:8082/health`, then `curl https://api.yourdomain.com/health` through the tunnel.
 
 **Memory tips for 6 GB RAM:** enable 2–4 GB swap; keep only these two containers running; if OOM, lower `voice-agent` memory in `docker-compose.yml`. Frontend: `VITE_API_BASE_URL=https://api.yourdomain.com/v1`.
+
+**Troubleshooting**
+
+| Symptom | Fix |
+|--------|-----|
+| `Credentials file not found: /run/secrets/gcp-credentials.json` | Ensure `secret-google/omniserva-ai-7258b456c513.json` exists on the server (folder is gitignored — copy via `scp`). Then `docker compose up -d`. |
+| `curl: Connection reset by peer` on :8082 | API likely OOM: `docker compose logs api --tail 80` and `docker inspect cs-api --format 'OOMKilled={{.State.OOMKilled}}'`. Enable swap; pull latest compose (API limit 1536M). |
+| `Couldn't connect` on :8083 | Voice container crash-looping — fix GCP key first, then `docker compose logs voice-agent`. |
 
 ## Development
 
