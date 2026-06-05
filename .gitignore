@@ -11,7 +11,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# Python venv/build lib at repo root only (do not use bare lib/ — it ignores frontend/src/lib/)
+/lib/
 lib64/
 parts/
 sdist/
