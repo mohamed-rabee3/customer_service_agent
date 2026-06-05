@@ -1,3 +1,6 @@
+# NumPy 2.x manylinux wheels need x86-64-v2 (SSE4.2). Core 2 Duo and older CPUs need 1.x.
+numpy>=1.26.0,<2.0.0
+
 # FastAPI & Server
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0

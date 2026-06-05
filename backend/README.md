@@ -260,7 +260,9 @@ Keep containers bound to localhost-only exposure if you prefer: change compose p
    WEBHOOK_DOMAIN=https://api.yourdomain.com
    ```
 
-4. Build and start (first build can take 30–60+ minutes on old CPUs; consider building on a faster PC and `docker save` / `docker load`):
+4. Build and start (first build can take 30–60+ minutes on old CPUs; consider building on a faster PC and `docker save` / `docker load`).
+
+   **Core 2 Duo / pre-SSE4.2 CPUs:** the image pins `numpy<2` because NumPy 2 wheels require x86-64-v2. If build still fails on `numpy`, pull latest `backend/Dockerfile` and rebuild with `docker compose build --no-cache`.
    ```bash
    docker compose up -d --build
    docker compose ps

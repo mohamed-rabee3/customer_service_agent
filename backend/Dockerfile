@@ -18,11 +18,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install NumPy 1.x first so livekit-agents does not pull NumPy 2 (needs SSE4.2 / x86-64-v2).
+RUN pip install --no-cache-dir "numpy>=1.26.0,<2.0.0" \
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir --force-reinstall --no-deps "numpy>=1.26.0,<2.0.0"
 
 COPY app ./app
 
-# Bake Silero / turn-detector weights into the image (no live API calls at build time)
+# Bake Silero / turn-detector weights into the image (skip if download fails on very old CPUs)
 RUN VOICE_SKIP_STARTUP_CHECKS=1 \
     SUPABASE_URL=https://build.invalid \
     SUPABASE_KEY=build \
@@ -31,7 +34,8 @@ RUN VOICE_SKIP_STARTUP_CHECKS=1 \
     LIVEKIT_URL=wss://build.invalid \
     LIVEKIT_API_KEY=build \
     LIVEKIT_API_SECRET=build \
-    python -m app.agents.voice_session_manager download-files
+    python -m app.agents.voice_session_manager download-files \
+    || echo "WARN: download-files failed; voice-agent will fetch models on first start"
 
 EXPOSE 8082 8083
 
