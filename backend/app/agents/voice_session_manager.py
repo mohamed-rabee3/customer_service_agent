@@ -246,7 +246,13 @@ def _build_agent_session() -> AgentSession:
     return AgentSession(llm=_build_realtime_model())
 
 
-if not _use_legacy_voice_pipeline():
+_skip_startup_checks = os.environ.get("VOICE_SKIP_STARTUP_CHECKS", "").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
+if not _skip_startup_checks and not _use_legacy_voice_pipeline():
     if settings.gemini_use_vertex:
         creds_err = _validate_vertex_credentials_file()
         if creds_err:
@@ -262,8 +268,9 @@ if not _use_legacy_voice_pipeline():
     elif not _ai_studio_accessible():
         raise SystemExit("GEMINI_API_KEY invalid. Set GEMINI_USE_VERTEX=true for GCP billing.")
 
-# Create the agent server
-server = AgentServer()
+# Health check HTTP server (used by Docker/orchestrators). Host port 8083 in production compose.
+_agent_health_port = int(os.environ.get("AGENT_HEALTH_PORT", "8083"))
+server = AgentServer(host="0.0.0.0", port=_agent_health_port)
 
 
 @server.rtc_session(agent_name="customer-service-agent")

@@ -170,6 +170,108 @@ backend/
 └── .env.example      # Environment variables template
 ```
 
+## Docker (home server / production)
+
+Runs two containers from one image:
+
+| Service      | Host port | Purpose                                      |
+|-------------|-----------|----------------------------------------------|
+| `api`       | **8082**  | FastAPI REST API (`/health`, `/docs`, `/v1`) |
+| `voice-agent` | **8083** | LiveKit worker health HTTP (not the voice media port) |
+
+The voice worker connects **outbound** to LiveKit Cloud; port 8083 is only for health checks and orchestration.
+
+### Public access: Cloudflare Tunnel + Nginx Proxy Manager
+
+Typical layout (no need to open 8082/8083 on your router):
+
+```
+Internet → Cloudflare → cloudflared (home server) → NPM → host:8082 / host:8083
+```
+
+Suggested subdomains (replace `yourdomain.com`):
+
+| Subdomain | NPM / tunnel target | Used for |
+|-----------|---------------------|----------|
+| `api.yourdomain.com` | `http://127.0.0.1:8082` | REST API, `/docs`, Telegram webhooks (`/v1/telegram/...`) |
+| `voice.yourdomain.com` | `http://127.0.0.1:8083` | Voice worker health only (optional; useful for monitoring) |
+| `app.yourdomain.com` | your frontend host | React PWA (set in `CORS_ORIGINS`) |
+
+**`backend/.env` (production):**
+
+```bash
+WEBHOOK_DOMAIN=https://api.yourdomain.com
+CORS_ORIGINS=https://app.yourdomain.com,http://localhost:8080
+DEBUG=false
+```
+
+**`frontend/.env`:**
+
+```bash
+VITE_API_BASE_URL=https://api.yourdomain.com/v1
+```
+
+**cloudflared** (`config.yml` ingress) — either send traffic to NPM or straight to Docker:
+
+```yaml
+ingress:
+  - hostname: api.yourdomain.com
+    service: http://127.0.0.1:8082
+  - hostname: voice.yourdomain.com
+    service: http://127.0.0.1:8083
+  # If NPM fronts everything instead, point both hostnames at NPM (e.g. http://127.0.0.1:81)
+  - service: http_status:404
+```
+
+**Nginx Proxy Manager** (if cloudflared → NPM → backends):
+
+1. Proxy Host `api.yourdomain.com` → Forward `http://<docker-host-ip>:8082`, **Websockets ON** (chat/SSE).
+2. Proxy Host `voice.yourdomain.com` → Forward `http://<docker-host-ip>:8083`.
+3. SSL: often **Flexible** or **Full** at Cloudflare; terminate TLS at Cloudflare or NPM per your tunnel setup.
+
+Keep containers bound to localhost-only exposure if you prefer: change compose ports to `127.0.0.1:8082:8082` so only cloudflared/NPM on the same host can reach them.
+
+### On your Ubuntu server (Core 2 Duo / 6 GB RAM)
+
+1. Install Docker Engine + Compose plugin:
+   ```bash
+   sudo apt update && sudo apt install -y docker.io docker-compose-v2
+   sudo usermod -aG docker $USER
+   # log out and back in
+   ```
+
+2. Clone the repo and configure:
+   ```bash
+   cd customer_service_agent/backend
+   cp .env.example .env
+   nano .env   # Supabase, LiveKit, Groq, Vertex settings
+   ```
+
+3. Copy your GCP service account JSON and point compose at it:
+   ```bash
+   cp /path/to/your-key.json ./gcp-service-account.json
+   # optional: export GCP_KEY_FILE=/other/path/key.json
+   ```
+   In `.env` for Docker, set:
+   ```bash
+   GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp-credentials.json
+   DEBUG=false
+   CORS_ORIGINS=https://app.yourdomain.com
+   WEBHOOK_DOMAIN=https://api.yourdomain.com
+   ```
+
+4. Build and start (first build can take 30–60+ minutes on old CPUs; consider building on a faster PC and `docker save` / `docker load`):
+   ```bash
+   docker compose up -d --build
+   docker compose ps
+   curl http://127.0.0.1:8082/health
+   curl http://127.0.0.1:8083/
+   ```
+
+5. **Firewall:** with Cloudflare Tunnel + NPM you usually **do not** publish 8082/8083 on the WAN; keep them on LAN/localhost only. Test locally: `curl http://127.0.0.1:8082/health`, then `curl https://api.yourdomain.com/health` through the tunnel.
+
+**Memory tips for 6 GB RAM:** enable 2–4 GB swap; keep only these two containers running; if OOM, lower `voice-agent` memory in `docker-compose.yml`. Frontend: `VITE_API_BASE_URL=https://api.yourdomain.com/v1`.
+
 ## Development
 
 - **Python Version:** 3.10+

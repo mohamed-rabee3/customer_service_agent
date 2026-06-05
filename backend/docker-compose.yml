@@ -1,0 +1,67 @@
+# Home server — API :8082, voice health :8083
+# Expose via subdomains (cloudflared + NPM): api.domain → :8082, voice.domain → :8083
+# Usage: copy .env, mount GCP key, docker compose up -d --build
+
+services:
+  api:
+    build: .
+    image: customer-service-api:latest
+    container_name: cs-api
+    restart: unless-stopped
+    ports:
+      - "8082:8082"
+    env_file:
+      - .env
+    environment:
+      DEBUG: "false"
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8082"
+      - --workers
+      - "1"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8082/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  voice-agent:
+    build: .
+    image: customer-service-api:latest
+    container_name: cs-voice-agent
+    restart: unless-stopped
+    ports:
+      - "8083:8083"
+    env_file:
+      - .env
+    environment:
+      AGENT_HEALTH_PORT: "8083"
+      # Override Windows host paths from .env when using Docker:
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp-credentials.json
+    volumes:
+      # Place service-account JSON next to this file or set GCP_KEY_FILE in .env
+      - ${GCP_KEY_FILE:-./gcp-service-account.json}:/run/secrets/gcp-credentials.json:ro
+    command:
+      - python
+      - -m
+      - app.agents.voice_session_manager
+      - start
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8083/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
