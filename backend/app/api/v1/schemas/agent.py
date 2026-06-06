@@ -115,6 +115,7 @@ class AgentDetailResponse(BaseModel):
     system_prompt: str
     status: AgentStatus
     telegram_bot_token: str | None = None
+    webhook_configs: dict[str, Any] = Field(default_factory=dict)
     mcp_tools: dict[str, Any]
     created_at: datetime
     updated_at: datetime

@@ -282,6 +282,31 @@ class InteractionService:
             "tool_permissions": permissions,
         }
 
+    async def end_customer_interaction(self, interaction_id: UUID) -> dict:
+        """
+        Customer-facing end of an active interaction (no auth).
+
+        Used by mock-call.html when the caller hangs up so the agent is freed
+        even if the LiveKit voice worker never receives participant_disconnected.
+        """
+        interaction = self.get_interaction(interaction_id)
+        terminal = (
+            InteractionStatus.COMPLETED,
+            InteractionStatus.FAILED,
+            InteractionStatus.ABANDONED,
+        )
+        if interaction.status in terminal:
+            return {
+                "status": "already_ended",
+                "interaction_id": str(interaction_id),
+            }
+
+        await self.update_interaction(
+            interaction_id=interaction_id,
+            status=InteractionStatus.COMPLETED,
+        )
+        return {"status": "ended", "interaction_id": str(interaction_id)}
+
     async def update_interaction(
         self,
         interaction_id: UUID,
@@ -292,10 +317,19 @@ class InteractionService:
         Update interaction status or phone number.
 
         On completion/failure:
-        - Update agent status back to idle
+        - Update agent status back to idle (only when no other active interactions)
         - Delete LiveKit room
         """
         interaction = self.get_interaction(interaction_id)
+
+        terminal = (
+            InteractionStatus.COMPLETED,
+            InteractionStatus.FAILED,
+            InteractionStatus.ABANDONED,
+        )
+        if status in (InteractionStatus.COMPLETED, InteractionStatus.FAILED):
+            if interaction.status in terminal:
+                return interaction
 
         update_data = {}
         if phone_number is not None:
@@ -303,8 +337,6 @@ class InteractionService:
         if status is not None:
             update_data["status"] = status.value
             if status in (InteractionStatus.COMPLETED, InteractionStatus.FAILED):
-                from datetime import datetime, timezone
-
                 update_data["end_at"] = datetime.now(timezone.utc).isoformat()
 
         if not update_data:
@@ -326,9 +358,19 @@ class InteractionService:
 
             # If interaction ended, reset agent and cleanup room
             if status in (InteractionStatus.COMPLETED, InteractionStatus.FAILED):
-                self.agent_repo.update_status(
-                    interaction.agent_id, AgentStatus.IDLE
+                other_active = (
+                    self.interaction_repo.client.table("interactions")
+                    .select("id")
+                    .eq("agent_id", str(interaction.agent_id))
+                    .eq("status", InteractionStatus.ACTIVE.value)
+                    .neq("id", str(interaction_id))
+                    .limit(1)
+                    .execute()
                 )
+                if not other_active.data:
+                    self.agent_repo.update_status(
+                        interaction.agent_id, AgentStatus.IDLE
+                    )
                 if interaction.call_source_id:
                     await room_manager.delete_room(interaction.call_source_id)
                 logger.info(
@@ -341,6 +383,70 @@ class InteractionService:
             raise
         except Exception as e:
             raise Exception(f"Failed to update interaction: {e}") from e
+
+    async def sweep_stale_active_voice_interactions(self) -> None:
+        """Close orphaned active voice interactions whose LiveKit room is gone."""
+        active = (
+            self.interaction_repo.client.table("interactions")
+            .select("id, call_source_id, started_at")
+            .eq("status", InteractionStatus.ACTIVE.value)
+            .eq("interaction_type", InteractionType.VOICE.value)
+            .execute()
+        )
+        if not active.data:
+            return
+
+        now = datetime.now(timezone.utc)
+        for row in active.data:
+            interaction_id = UUID(row["id"])
+            room_name = row.get("call_source_id")
+            started_raw = row.get("started_at")
+            started_at = None
+            if started_raw:
+                started_at = datetime.fromisoformat(
+                    str(started_raw).replace("Z", "+00:00")
+                )
+
+            room_missing = not room_name
+            if room_name:
+                try:
+                    from livekit.protocol.room import ListRoomsRequest
+
+                    from app.livekit.client import get_livekit_api
+
+                    lk = get_livekit_api()
+                    listed = await lk.room.list_rooms(
+                        ListRoomsRequest(names=[room_name])
+                    )
+                    room_missing = not listed.rooms
+                except Exception as e:
+                    logger.warning(
+                        "Voice sweep: could not list room %s: %s",
+                        room_name,
+                        e,
+                    )
+
+            age_seconds = (
+                (now - started_at).total_seconds() if started_at else 0
+            )
+            if not room_missing and age_seconds < 3600:
+                continue
+
+            logger.info(
+                "Sweeping stale voice interaction %s "
+                "(room_missing=%s, age_seconds=%.0f)",
+                interaction_id,
+                room_missing,
+                age_seconds,
+            )
+            try:
+                await self.end_customer_interaction(interaction_id)
+            except Exception as e:
+                logger.error(
+                    "Voice sweep failed for interaction %s: %s",
+                    interaction_id,
+                    e,
+                )
 
     async def get_agent_ids_for_supervisor(
         self,

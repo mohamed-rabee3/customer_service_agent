@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import { settingsAPI } from '../services/settingsService';
+import defaultLogo from '@/assets/cover_background.png';
 
 // Product defaults — used before login and as a fallback when settings are empty.
 export const DEFAULT_COMPANY_NAME = 'OmniServa AI';
 export const DEFAULT_TAGLINE = 'Agentic customer service system with human feedback';
+export const DEFAULT_LOGO_URL = defaultLogo;
 
 interface Brand {
   companyName: string;
@@ -26,13 +28,17 @@ export const BrandProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [brand, setBrand] = useState<Brand>({
     companyName: DEFAULT_COMPANY_NAME,
     tagline: DEFAULT_TAGLINE,
-    logoUrl: null,
+    logoUrl: DEFAULT_LOGO_URL,
   });
 
   useEffect(() => {
     if (!isLoggedIn) {
       // Logged out (e.g. login screen) — show the product defaults.
-      setBrand({ companyName: DEFAULT_COMPANY_NAME, tagline: DEFAULT_TAGLINE, logoUrl: null });
+      setBrand({
+        companyName: DEFAULT_COMPANY_NAME,
+        tagline: DEFAULT_TAGLINE,
+        logoUrl: DEFAULT_LOGO_URL,
+      });
       return;
     }
 
@@ -43,7 +49,7 @@ export const BrandProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         setBrand({
           companyName: data?.companyName || DEFAULT_COMPANY_NAME,
           tagline: data?.tagline || DEFAULT_TAGLINE,
-          logoUrl: data?.logoPreview || null,
+          logoUrl: data?.logoPreview || DEFAULT_LOGO_URL,
         });
       } catch (err) {
         console.error('Failed to fetch brand settings:', err);

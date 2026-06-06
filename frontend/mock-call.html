@@ -602,15 +602,24 @@
 
         async function endCall() {
             log('Ending call...', 'info');
+            const backendUrl = document.getElementById('backendUrl').value.replace(/\/$/, '');
+            const idToEnd = interactionId;
+
             try {
+                if (idToEnd) {
+                    const response = await fetch(`${backendUrl}/v1/interactions/${idToEnd}/end`, {
+                        method: 'POST',
+                    });
+                    if (!response.ok) {
+                        const err = await response.json().catch(() => ({ detail: response.statusText }));
+                        log(`Backend end failed: ${err.detail || response.statusText}`, 'error');
+                    } else {
+                        const data = await response.json();
+                        log(`Interaction ${idToEnd} ended (${data.status})`, 'success');
+                    }
+                }
                 if (room) {
                     await room.disconnect();
-                }
-                // Notify backend
-                if (interactionId) {
-                    const backendUrl = document.getElementById('backendUrl').value.replace(/\/$/, '');
-                    // We skip PATCH since it requires auth - just log it
-                    log(`Interaction ${interactionId} ended`, 'info');
                 }
             } catch (err) {
                 log(`Disconnect error: ${err.message}`, 'error');

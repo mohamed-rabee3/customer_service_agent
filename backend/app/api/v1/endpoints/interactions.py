@@ -135,6 +135,18 @@ def get_interaction(
     )
 
 
+@router.post("/{interaction_id}/end", status_code=200)
+async def end_customer_interaction(interaction_id: UUID):
+    """
+    End an active interaction (customer-facing, no auth).
+
+    Called by mock-call.html when the caller hangs up so the assigned agent
+    returns to idle even if the LiveKit voice worker misses the disconnect.
+    """
+    service = InteractionService()
+    return await service.end_customer_interaction(interaction_id)
+
+
 @router.patch("/{interaction_id}", response_model=InteractionResponse)
 async def update_interaction(
     interaction_id: UUID,

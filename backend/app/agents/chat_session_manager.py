@@ -138,6 +138,35 @@ class ChatSessionManager:
         return max(30, int(settings.chat_idle_timeout_seconds))
 
     @classmethod
+    def inactivity_seconds(
+        cls,
+        interaction_id: UUID,
+        *,
+        started_at: datetime | None = None,
+        last_message_at: datetime | None = None,
+    ) -> float:
+        """
+        Seconds since last chat activity.
+
+        In-memory sessions use monotonic last-activity timestamps; recovered /
+        orphaned rows fall back to DB message or interaction start time.
+        """
+        last_mono = cls._last_activity.get(interaction_id)
+        if last_mono is not None:
+            return time.monotonic() - last_mono
+
+        now = datetime.now(timezone.utc)
+        if last_message_at is not None:
+            if last_message_at.tzinfo is None:
+                last_message_at = last_message_at.replace(tzinfo=timezone.utc)
+            return (now - last_message_at).total_seconds()
+        if started_at is not None:
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+            return (now - started_at).total_seconds()
+        return 0.0
+
+    @classmethod
     def _cancel_idle_timer(cls, interaction_id: UUID) -> None:
         task = cls._idle_tasks.pop(interaction_id, None)
         if task and not task.done():
@@ -155,19 +184,25 @@ class ChatSessionManager:
 
     @classmethod
     async def _idle_watchdog(cls, interaction_id: UUID) -> None:
+        """Poll inactivity and close the session once the timeout is exceeded."""
         timeout = cls._idle_timeout_seconds()
+        poll_interval = min(10.0, max(1.0, timeout / 6))
         try:
-            await asyncio.sleep(timeout)
-            last = cls._last_activity.get(interaction_id)
-            if last is None:
-                return
-            if time.monotonic() - last >= timeout - 0.5:
-                logger.info(
-                    "Chat session %s idle for %ss — closing",
-                    interaction_id,
-                    timeout,
-                )
-                await finalize_chat_session_on_idle(interaction_id)
+            while interaction_id in cls._sessions:
+                await asyncio.sleep(poll_interval)
+                last = cls._last_activity.get(interaction_id)
+                if last is None:
+                    return
+                idle_for = time.monotonic() - last
+                if idle_for >= timeout - 0.5:
+                    logger.info(
+                        "Chat session %s idle for %.0fs (limit %ss) — closing",
+                        interaction_id,
+                        idle_for,
+                        timeout,
+                    )
+                    await finalize_chat_session_on_idle(interaction_id)
+                    return
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -454,7 +489,11 @@ async def finalize_chat_session_on_idle(interaction_id: UUID) -> None:
 
 
 async def sweep_stale_active_chat_sessions() -> None:
-    """Close DB-active chats with no recent messages (e.g. after server restart)."""
+    """Close active chats that exceeded the inactivity timeout.
+
+    Checks every active chat row — including in-memory sessions — so idle
+  cleanup still works if a per-session watchdog task was lost on reload.
+    """
     from app.db.supabase import get_supabase_service_client
 
     timeout = ChatSessionManager._idle_timeout_seconds()
@@ -469,12 +508,11 @@ async def sweep_stale_active_chat_sessions() -> None:
     if not active.data:
         return
 
-    now = datetime.now(timezone.utc)
-
     for row in active.data:
         interaction_id = UUID(row["id"])
-        if interaction_id in ChatSessionManager.get_active_sessions():
-            continue
+        started_at = datetime.fromisoformat(
+            str(row["started_at"]).replace("Z", "+00:00")
+        )
 
         msg_res = (
             db.table("chat_messages")
@@ -484,20 +522,23 @@ async def sweep_stale_active_chat_sessions() -> None:
             .limit(1)
             .execute()
         )
+        last_message_at = None
         if msg_res.data:
-            last_at = datetime.fromisoformat(
+            last_message_at = datetime.fromisoformat(
                 msg_res.data[0]["created_at"].replace("Z", "+00:00")
             )
-        else:
-            last_at = datetime.fromisoformat(
-                row["started_at"].replace("Z", "+00:00")
-            )
 
-        if (now - last_at).total_seconds() >= timeout:
+        inactive = ChatSessionManager.inactivity_seconds(
+            interaction_id,
+            started_at=started_at,
+            last_message_at=last_message_at,
+        )
+        if inactive >= timeout:
             logger.info(
-                "Sweeping stale chat interaction %s (inactive %.0fs)",
+                "Sweeping stale chat interaction %s (inactive %.0fs, limit %ss)",
                 interaction_id,
-                (now - last_at).total_seconds(),
+                inactive,
+                timeout,
             )
             await finalize_chat_session_on_idle(interaction_id)
 
@@ -553,13 +594,17 @@ async def repair_completed_chats_missing_archive() -> None:
 
 async def run_chat_idle_sweeper(stop_event: asyncio.Event) -> None:
     """Background loop for orphaned active interactions in the database."""
+    from app.services.interaction_service import InteractionService
+
+    voice_service = InteractionService()
     while not stop_event.is_set():
         try:
             await sweep_stale_active_chat_sessions()
+            await voice_service.sweep_stale_active_voice_interactions()
             await repair_completed_chats_missing_archive()
         except Exception as e:
             logger.error("Chat idle sweeper error: %s", e)
         try:
-            await asyncio.wait_for(stop_event.wait(), timeout=30.0)
+            await asyncio.wait_for(stop_event.wait(), timeout=15.0)
         except asyncio.TimeoutError:
             pass

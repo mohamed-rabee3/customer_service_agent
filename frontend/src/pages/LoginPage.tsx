@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import './LoginPage.css';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { useBrand } from '../context/BrandContext';
-import robotImage from '@/assets/login-image.png';
+import { useBrand, DEFAULT_LOGO_URL } from '../context/BrandContext';
 
 const LoginPage: React.FC = () => {
     const { brand } = useBrand();
@@ -40,25 +39,11 @@ const LoginPage: React.FC = () => {
                 {/* Left panel - floating robot */}
                 <div className="illustration">
                     <div className="robot-wrapper">
-                        {brand.logoUrl ? (
-                            <img
-                                src={brand.logoUrl}
-                                alt={`${brand.companyName} logo`}
-                                className="robot-img"
-                                style={{
-                                    width: 120,
-                                    height: 120,
-                                    objectFit: 'contain',
-                                    borderRadius: 'var(--radius-lg, 12px)',
-                                }}
-                            />
-                        ) : (
-                            <img src={robotImage} alt="AI Support Agent" className="robot-img" />
-                        )}
-                        <p className="robot-tagline">{brand.companyName}</p>
-                        <p className="robot-subtagline" style={{ margin: '6px 0 0', fontSize: 13, lineHeight: 1.4, color: 'var(--text-muted)', textAlign: 'center', maxWidth: 260 }}>
-                            {brand.tagline}
-                        </p>
+                        <img
+                            src={brand.logoUrl || DEFAULT_LOGO_URL}
+                            alt={`${brand.companyName} logo`}
+                            className="robot-img brand-cover-logo"
+                        />
                         <div className="robot-shadow"></div>
                     </div>
                 </div>

@@ -59,10 +59,12 @@ class AgentDashboardCard(BaseModel):
     id: UUID
     name: str
     agent_type: AgentType
+    system_prompt: str = ""
     status: AgentStatus
     performance_score: float | None = None
     total_interactions: int = 0
     mcp_tools: dict[str, Any] = Field(default_factory=dict)
+    webhook_configs: dict[str, Any] = Field(default_factory=dict)
     current_interaction: dict[str, Any] | None = None
     latest_metrics: dict[str, Any] | None = None
 

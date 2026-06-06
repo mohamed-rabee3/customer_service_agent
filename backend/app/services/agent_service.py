@@ -1,7 +1,9 @@
 """Agent service - Business logic layer for agent operations."""
 
+import copy
 import logging
 from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -43,6 +45,58 @@ def validate_telegram_token(token: str | None) -> bool:
         return False
     
     return True
+
+
+def _stored_telegram_token(agent: AgentModel) -> str:
+    """Resolve Telegram token from legacy column or webhook_configs."""
+    token = (agent.telegram_bot_token or "").strip()
+    if token and token != "{}":
+        return token
+    wc = agent.webhook_configs or {}
+    return ((wc.get("telegram") or {}).get("bot_token") or "").strip()
+
+
+def _merge_webhook_configs_on_update(
+    agent: AgentModel,
+    request: UpdateAgentRequest,
+) -> tuple[dict[str, Any], str]:
+    """
+    Merge incoming webhook_configs without wiping stored secrets when the UI
+    omits an unchanged bot token (common after edit form load).
+    """
+    merged = copy.deepcopy(agent.webhook_configs or {})
+    existing_token = _stored_telegram_token(agent)
+
+    if request.webhook_configs is not None:
+        for channel, cfg in request.webhook_configs.items():
+            if not isinstance(cfg, dict):
+                continue
+            prev = dict(merged.get(channel) or {})
+            incoming = dict(cfg)
+            if channel == "telegram":
+                raw = incoming.get("bot_token")
+                if raw is None or (isinstance(raw, str) and not raw.strip()):
+                    incoming.pop("bot_token", None)
+            prev.update(incoming)
+            merged[channel] = prev
+
+    req_token = (request.telegram_bot_token or "").strip()
+    if req_token and req_token != "{}":
+        final_token = req_token
+    elif req_token == "{}":
+        final_token = "{}"
+    else:
+        final_token = existing_token if existing_token else "{}"
+
+    if final_token and final_token != "{}":
+        merged.setdefault("telegram", {})
+        merged["telegram"]["bot_token"] = final_token
+        merged["telegram"]["enabled"] = True
+    elif "telegram" in merged:
+        merged["telegram"]["enabled"] = False
+        merged["telegram"]["bot_token"] = "{}"
+
+    return merged, final_token if final_token != "{}" else "{}"
 
 
 def _is_status_only_update(request: UpdateAgentRequest) -> bool:
@@ -298,27 +352,9 @@ def update_agent(
             detail="Invalid Telegram bot token format. Please use the token from BotFather (format: 123456:ABC-DEF1234ghIkl...)",
         )
 
-    # Ensure telegram_bot_token and webhook_configs stay in sync
-    webhook_configs = request.webhook_configs or agent.webhook_configs or {}
-    tg_conf = webhook_configs.get("telegram", {})
-    
-    if request.telegram_bot_token and request.telegram_bot_token != "{}":
-        # Sync from request to webhook_configs
-        if "telegram" not in webhook_configs:
-            webhook_configs["telegram"] = {}
-        webhook_configs["telegram"]["bot_token"] = request.telegram_bot_token.strip()
-        webhook_configs["telegram"]["enabled"] = True
-    elif tg_conf.get("bot_token") and tg_conf.get("bot_token") != "{}":
-        # Sync from webhook_configs to request
-        request.telegram_bot_token = tg_conf.get("bot_token").strip()
-    else:
-        request.telegram_bot_token = "{}"
-        if "telegram" in webhook_configs:
-            webhook_configs["telegram"]["enabled"] = False
-            webhook_configs["telegram"]["bot_token"] = "{}"
-        
-    # Update the request to include the unified webhook_configs
+    webhook_configs, resolved_token = _merge_webhook_configs_on_update(agent, request)
     request.webhook_configs = webhook_configs
+    request.telegram_bot_token = resolved_token
     
     # Log the update for debugging
     logger.info(f"🚀 Sending update to database for agent {agent_id}. Token starts with: {str(request.telegram_bot_token)[:10] if request.telegram_bot_token else 'None'}")
@@ -438,13 +474,14 @@ async def update_agent_with_telegram_webhook(
         allowed_agent_type=allowed_agent_type,
     )
     
-    # If Telegram token was provided, automatically set up the webhook
+    # Re-register webhook when a token exists (new or preserved in DB)
     webhook_set = False
-    if request.telegram_bot_token:
+    token_for_webhook = _stored_telegram_token(updated_agent)
+    if token_for_webhook:
         try:
             logger.info(f"🔄 Automatically setting up Telegram webhook for agent {agent_id}...")
             webhook_set = await TelegramWebhookService.set_webhook(
-                request.telegram_bot_token.strip(),
+                token_for_webhook,
                 agent_id
             )
             

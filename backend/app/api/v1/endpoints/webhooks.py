@@ -74,7 +74,10 @@ async def telegram_webhook(
     # 2. Lookup Agent & Token up front
     agent_result = (
         db.table("agents")
-        .select("id, name, system_prompt, status, agent_type, telegram_bot_token")
+        .select(
+            "id, name, system_prompt, status, agent_type, "
+            "telegram_bot_token, webhook_configs"
+        )
         .eq("id", str(agent_id))
         .limit(1)
         .execute()
@@ -84,6 +87,9 @@ async def telegram_webhook(
         
     agent = agent_result.data[0]
     bot_token = (agent.get("telegram_bot_token") or "").strip()
+    if bot_token in ("", "{}"):
+        wc = agent.get("webhook_configs") or {}
+        bot_token = ((wc.get("telegram") or {}).get("bot_token") or "").strip()
     if bot_token in ("", "{}"):
         bot_token = (settings.telegram_bot_token or "").strip()
     if not bot_token:

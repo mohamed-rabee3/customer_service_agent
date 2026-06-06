@@ -1,6 +1,24 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import defaultLogo from './assets/cover_background.png';
 import './index.css';
+
+function ensureFavicon(href: string) {
+  const setLink = (rel: string) => {
+    let link = document.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`);
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = rel;
+      document.head.appendChild(link);
+    }
+    link.type = 'image/png';
+    link.href = href;
+  };
+  setLink('icon');
+  setLink('apple-touch-icon');
+}
+
+ensureFavicon(defaultLogo);
 import '@fontsource/inter/300.css';
 import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';

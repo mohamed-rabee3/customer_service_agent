@@ -53,9 +53,12 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;
 };
 
-const SupervisorRoute: React.FC<{ children: React.ReactNode, type?: 'voice' | 'chat' }> = ({ children, type }) => {
+const SupervisorRoute: React.FC<{ children: React.ReactNode, type?: 'voice' | 'chat', supervisorOnly?: boolean }> = ({ children, type, supervisorOnly }) => {
   const { role, supervisorType } = useAuth();
-  if (role === 'admin') return <>{children}</>; // Admins can see everything
+  if (role === 'admin') {
+    if (supervisorOnly) return <Navigate to="/" replace />;
+    return <>{children}</>;
+  }
   if (role !== 'supervisor') return <Navigate to="/" replace />;
   if (type && supervisorType !== type) return <Navigate to="/" replace />;
   return <>{children}</>;
@@ -85,7 +88,7 @@ function AppRoutes() {
         <Route path="/issues" element={<AdminRoute><ArchiveIssues /></AdminRoute>} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/supervisors" element={<AdminRoute><SupervisorManagement /></AdminRoute>} />
-        <Route path="/agent-config" element={<SupervisorRoute><AgentConfiguration /></SupervisorRoute>} />
+        <Route path="/agent-config" element={<SupervisorRoute supervisorOnly><AgentConfiguration /></SupervisorRoute>} />
 
         {/* Supervisor (+ Admin fallback) Routes */}
         <Route path="/voice-agent" element={<SupervisorRoute type="voice"><VoiceAgentMonitoring /></SupervisorRoute>} />

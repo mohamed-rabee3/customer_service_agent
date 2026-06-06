@@ -656,6 +656,38 @@ async def _handle_post_call(
     from app.agents.base_agent import _get_client
     from app.core.constants import InteractionStatus
 
+    # ── 0. Skip if customer already ended via API (idempotent) ──
+    if interaction_id:
+        try:
+            client = _get_client()
+            status_row = (
+                client.table("interactions")
+                .select("status")
+                .eq("id", interaction_id)
+                .limit(1)
+                .execute()
+            )
+            if status_row.data:
+                current = status_row.data[0]["status"]
+                if current != InteractionStatus.ACTIVE.value:
+                    logger.info(
+                        "Interaction %s already %s — skipping post-call",
+                        interaction_id,
+                        current,
+                    )
+                    if agent_db_id and agent_db_id != "unknown":
+                        try:
+                            update_agent_status(agent_db_id, AgentStatus.IDLE)
+                        except Exception as e:
+                            logger.warning(
+                                "Post-call idle bump failed for agent %s: %s",
+                                agent_db_id,
+                                e,
+                            )
+                    return
+        except Exception as e:
+            logger.warning("Could not check interaction status before post-call: %s", e)
+
     # ── 1. Resolve agent_db_id (best effort) ──
     if (not agent_db_id or agent_db_id == "unknown") and interaction_id:
         try:

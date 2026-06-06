@@ -114,9 +114,9 @@ const buildAgentPayload = (form: AgentFormData, supervisorType: 'voice' | 'chat'
 
         payload.webhook_configs = form.webhook_configs;
 
-        const telegramToken = form.webhook_configs.telegram?.bot_token;
+        const telegramToken = form.webhook_configs.telegram?.bot_token?.trim();
 
-        if (telegramToken) {
+        if (telegramToken && telegramToken !== '{}') {
 
             payload.telegram_bot_token = telegramToken;
 
@@ -540,6 +540,26 @@ const AgentConfiguration: React.FC = () => {
 
             const data = res.data;
 
+            const webhook_configs = { ...(data.webhook_configs || {}) };
+
+            const savedToken =
+                webhook_configs.telegram?.bot_token ||
+                (data as { telegram_bot_token?: string }).telegram_bot_token;
+
+            if (savedToken && savedToken !== '{}') {
+
+                webhook_configs.telegram = {
+
+                    ...webhook_configs.telegram,
+
+                    enabled: true,
+
+                    bot_token: savedToken,
+
+                };
+
+            }
+
             setFormData({
 
                 name: data.name,
@@ -550,7 +570,7 @@ const AgentConfiguration: React.FC = () => {
 
                 status: data.status,
 
-                webhook_configs: data.webhook_configs || {},
+                webhook_configs,
 
             });
 
