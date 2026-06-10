@@ -26,6 +26,7 @@ export interface ChatAgent {
 
 const DEFAULT_FEED_IDLE = 'Waiting for chat.';
 const DEFAULT_FEED_ACTIVE = 'Live chat in progress.';
+const DASHBOARD_POLL_MS = 5000;
 
 const glassCardSx = {
   textAlign: 'center' as const,
@@ -86,8 +87,11 @@ const ChatMonitoring: React.FC = () => {
   const [selectedAgent, setSelectedAgent] = useState<ChatAgent | null>(null);
   const [loading, setLoading] = useState(true);
   const erroredRef = useRef(false);
+  const inFlightRef = useRef(false);
 
   const fetchAgents = async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     try {
       const res = await supervisorsAPI.getMyDashboard();
       const list = Array.isArray(res.data?.agents) ? res.data.agents : [];
@@ -104,13 +108,14 @@ const ChatMonitoring: React.FC = () => {
         toast.error('Failed to load chat agents');
       }
     } finally {
+      inFlightRef.current = false;
       setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchAgents();
-    const interval = setInterval(fetchAgents, 2000);
+    const interval = setInterval(fetchAgents, DASHBOARD_POLL_MS);
     return () => clearInterval(interval);
   }, []);
 

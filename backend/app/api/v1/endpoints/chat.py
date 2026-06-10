@@ -27,6 +27,7 @@ from app.api.v1.schemas.chat import (
 )
 from app.core.constants import AgentStatus, InteractionType, InteractionStatus, UserRole
 from app.db.supabase import get_supabase_client, get_supabase_service_client
+from app.services.agent_service import resolve_effective_system_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -125,10 +126,13 @@ async def start_chat_session(
     }).eq("id", str(request.agent_id)).execute()
 
     # 5. Boot the ChatAgent in memory
+    effective_prompt = resolve_effective_system_prompt(
+        agent["system_prompt"], request.agent_id
+    )
     await ChatSessionManager.start_session(
         agent_id=request.agent_id,
         interaction_id=interaction_id,
-        system_prompt=agent["system_prompt"],
+        system_prompt=effective_prompt,
         agent_name=agent["name"],
     )
 

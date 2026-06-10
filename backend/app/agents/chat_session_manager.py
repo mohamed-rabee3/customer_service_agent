@@ -55,10 +55,13 @@ async def ensure_chat_session(interaction_id: UUID) -> ChatAgent | None:
         return None
     agent = agent_row.data[0]
 
+    from app.services.agent_service import resolve_effective_system_prompt
+
+    effective_prompt = resolve_effective_system_prompt(agent["system_prompt"], agent_id)
     chat_agent = await ChatSessionManager.start_session(
         agent_id=agent_id,
         interaction_id=interaction_id,
-        system_prompt=agent["system_prompt"],
+        system_prompt=effective_prompt,
         agent_name=agent["name"],
     )
 

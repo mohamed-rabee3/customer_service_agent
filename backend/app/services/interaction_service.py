@@ -21,6 +21,7 @@ from app.repositories.agent_repository import AgentRepository
 from app.repositories.interaction_repository import InteractionRepository
 from app.db.supabase import run_supabase_request
 from app.repositories.supervisor_repository import supervisor_repository
+from app.services.agent_service import resolve_effective_system_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -124,9 +125,12 @@ class InteractionService:
 
         interaction_id_str = str(interaction["id"])
 
+        effective_prompt = resolve_effective_system_prompt(
+            agent.system_prompt, agent.id
+        )
         room_metadata = {
             "agent_db_id": str(agent.id),
-            "system_prompt": agent.system_prompt,
+            "system_prompt": effective_prompt,
             "interaction_type": interaction_type.value,
             "mcp_tools": agent.mcp_tools,
             "interaction_id": interaction_id_str,

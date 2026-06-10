@@ -27,5 +27,6 @@ export const supervisorsAPI = {
 
   delete: (id: string) => api.delete(`/supervisors/${id}`),
 
-  getMyDashboard: () => api.get('/supervisors/me/dashboard'),
+  getMyDashboard: () =>
+    api.get('/supervisors/me/dashboard', { timeout: 30000 }),
 };

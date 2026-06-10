@@ -13,6 +13,7 @@ from app.core.constants import AgentStatus, InteractionStatus, InteractionType
 from app.db.supabase import get_supabase_service_client
 from app.services.whatsapp_service import WhatsAppService
 from app.services.instagram_service import InstagramService
+from app.services.agent_service import resolve_effective_system_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,8 @@ async def whatsapp_webhook(
         logger.info(f"⏸️ Agent {agent_id} is paused")
         return {"status": "ignored", "reason": "agent_paused"}
 
+    effective_prompt = resolve_effective_system_prompt(agent["system_prompt"], agent_id)
+
     # 3. Find or create session
     session_result = db.table("interactions").select("id").eq("call_source_id", call_source_id).eq("status", InteractionStatus.ACTIVE.value).limit(1).execute()
 
@@ -109,7 +112,7 @@ async def whatsapp_webhook(
             chat_agent = await ChatSessionManager.start_session(
                 agent_id=agent_id,
                 interaction_id=interaction_id,
-                system_prompt=agent["system_prompt"],
+                system_prompt=effective_prompt,
                 agent_name=agent["name"],
             )
             history_res = db.table("chat_messages").select("role, content").eq("interaction_id", str(interaction_id)).order("created_at").execute()
@@ -138,7 +141,7 @@ async def whatsapp_webhook(
         chat_agent = await ChatSessionManager.start_session(
             agent_id=agent_id,
             interaction_id=interaction_id,
-            system_prompt=agent["system_prompt"],
+            system_prompt=effective_prompt,
             agent_name=agent["name"],
         )
 
@@ -262,6 +265,8 @@ async def instagram_webhook(
         logger.info(f"⏸️ Agent {agent_id} is paused")
         return {"status": "ignored"}
 
+    effective_prompt = resolve_effective_system_prompt(agent["system_prompt"], agent_id)
+
     # 3. Find or create session
     session_result = db.table("interactions").select("id").eq("call_source_id", call_source_id).eq("status", InteractionStatus.ACTIVE.value).limit(1).execute()
 
@@ -277,7 +282,7 @@ async def instagram_webhook(
             chat_agent = await ChatSessionManager.start_session(
                 agent_id=agent_id,
                 interaction_id=interaction_id,
-                system_prompt=agent["system_prompt"],
+                system_prompt=effective_prompt,
                 agent_name=agent["name"],
             )
             history_res = db.table("chat_messages").select("role, content").eq("interaction_id", str(interaction_id)).order("created_at").execute()
@@ -304,7 +309,7 @@ async def instagram_webhook(
         chat_agent = await ChatSessionManager.start_session(
             agent_id=agent_id,
             interaction_id=interaction_id,
-            system_prompt=agent["system_prompt"],
+            system_prompt=effective_prompt,
             agent_name=agent["name"],
         )
 

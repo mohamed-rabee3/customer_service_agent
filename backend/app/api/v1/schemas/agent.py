@@ -143,3 +143,27 @@ class AgentWhisperResponse(BaseModel):
     acknowledged: bool
     acknowledged_at: str
     resumed_at: str | None = None
+
+
+class KnowledgeDocumentResponse(BaseModel):
+    """Metadata for an uploaded knowledge base document."""
+
+    id: UUID
+    agent_id: UUID
+    filename: str
+    file_size_bytes: int
+    created_at: datetime
+
+
+class KnowledgeDocumentListResponse(BaseModel):
+    """List of knowledge documents for an agent."""
+
+    documents: list[KnowledgeDocumentResponse]
+    total_size_bytes: int
+    document_count: int
+
+
+class KnowledgeUploadResponse(BaseModel):
+    """Response after uploading a knowledge document."""
+
+    document: KnowledgeDocumentResponse

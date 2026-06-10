@@ -28,6 +28,20 @@ export interface AgentPayload {
   status?: 'idle' | 'paused' | 'in_chat' | 'in_call';
 }
 
+export interface KnowledgeDocument {
+  id: string;
+  agent_id: string;
+  filename: string;
+  file_size_bytes: number;
+  created_at: string;
+}
+
+export interface KnowledgeDocumentList {
+  documents: KnowledgeDocument[];
+  total_size_bytes: number;
+  document_count: number;
+}
+
 export const agentsAPI = {
   getAll: (agentType?: string) =>
     api.get(`/agents${agentType ? `?agent_type=${agentType}` : ''}`),
@@ -50,4 +64,18 @@ export const agentsAPI = {
   /** POST /agents/{id}/whisper — LiveKit instruction during active call/chat */
   whisper: (id: string, instructions: string) =>
     api.post(`/agents/${id}/whisper`, { instructions }),
+
+  listKnowledge: (agentId: string) =>
+    api.get<KnowledgeDocumentList>(`/agents/${agentId}/knowledge`),
+
+  uploadKnowledge: (agentId: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post(`/agents/${agentId}/knowledge`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  deleteKnowledge: (agentId: string, docId: string) =>
+    api.delete(`/agents/${agentId}/knowledge/${docId}`),
 };

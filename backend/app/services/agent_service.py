@@ -1,12 +1,14 @@
 """Agent service - Business logic layer for agent operations."""
 
 import copy
+import hashlib
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 
 from app.agents.chat_session_manager import ChatSessionManager
 from app.api.v1.schemas.agent import CreateAgentRequest, UpdateAgentRequest
@@ -26,6 +28,18 @@ from app.repositories.agent_repository import AgentModel, agent_repository
 from app.services.telegram_webhook_service import TelegramWebhookService
 
 logger = logging.getLogger(__name__)
+
+KNOWLEDGE_MAX_FILE_BYTES = 256 * 1024
+KNOWLEDGE_MAX_FILES_PER_AGENT = 10
+KNOWLEDGE_MAX_TOTAL_BYTES = 1024 * 1024
+KNOWLEDGE_MAX_PROMPT_CHARS = 100_000
+KNOWLEDGE_ALLOWED_EXTENSIONS = {".md", ".markdown"}
+KNOWLEDGE_ALLOWED_MIME_TYPES = {
+    "text/markdown",
+    "text/plain",
+    "text/x-markdown",
+    "application/octet-stream",
+}
 
 
 def validate_telegram_token(token: str | None) -> bool:
@@ -537,4 +551,249 @@ async def create_agent_with_telegram_webhook(
             logger.warning(f"   Agent is configured but webhook may need manual setup")
     
     return created_agent, webhook_set
+
+
+def _ensure_agent_available_for_knowledge(agent: AgentModel) -> None:
+    """Block knowledge changes while the agent is in an active session."""
+    if agent.status == AgentStatus.IN_CALL:
+        raise AgentBusyException("Cannot modify knowledge base while agent is in active call")
+    if agent.status == AgentStatus.IN_CHAT:
+        raise AgentBusyException("Cannot modify knowledge base while agent is in active chat")
+
+
+def _validate_knowledge_filename(filename: str) -> None:
+    suffix = Path(filename).suffix.lower()
+    if suffix not in KNOWLEDGE_ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only .md and .markdown files are allowed",
+        )
+
+
+def _knowledge_doc_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": UUID(row["id"]),
+        "agent_id": UUID(row["agent_id"]),
+        "filename": row["filename"],
+        "file_size_bytes": row["file_size_bytes"],
+        "created_at": row["created_at"],
+    }
+
+
+def list_knowledge_documents(
+    agent_id: UUID,
+    supervisor_id: UUID,
+    *,
+    allowed_agent_type: AgentType | None = None,
+) -> dict[str, Any]:
+    """List knowledge documents for an agent."""
+    get_agent(agent_id, supervisor_id, allowed_agent_type=allowed_agent_type)
+
+    db = get_supabase_service_client()
+    result = (
+        db.table("agent_knowledge_documents")
+        .select("id, agent_id, filename, file_size_bytes, created_at")
+        .eq("agent_id", str(agent_id))
+        .order("created_at")
+        .execute()
+    )
+    rows = result.data or []
+    documents = [_knowledge_doc_from_row(row) for row in rows]
+    total_size = sum(doc["file_size_bytes"] for doc in documents)
+    return {
+        "documents": documents,
+        "total_size_bytes": total_size,
+        "document_count": len(documents),
+    }
+
+
+async def upload_knowledge_document(
+    agent_id: UUID,
+    file: UploadFile,
+    supervisor_id: UUID,
+    *,
+    allowed_agent_type: AgentType | None = None,
+) -> dict[str, Any]:
+    """Upload a markdown knowledge document for an agent."""
+    agent = get_agent(agent_id, supervisor_id, allowed_agent_type=allowed_agent_type)
+    _ensure_agent_available_for_knowledge(agent)
+
+    filename = (file.filename or "").strip()
+    if not filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Filename is required",
+        )
+    _validate_knowledge_filename(filename)
+
+    content_type = (file.content_type or "").split(";")[0].strip().lower()
+    if content_type and content_type not in KNOWLEDGE_ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file type: {content_type}",
+        )
+
+    raw_bytes = await file.read()
+    if len(raw_bytes) > KNOWLEDGE_MAX_FILE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File exceeds maximum size of {KNOWLEDGE_MAX_FILE_BYTES // 1024} KB",
+        )
+    if not raw_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File is empty",
+        )
+
+    content_text = raw_bytes.decode("utf-8", errors="replace").replace("\x00", "").strip()
+    if not content_text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File contains no usable text content",
+        )
+
+    content_hash = hashlib.sha256(content_text.encode("utf-8")).hexdigest()
+    file_size_bytes = len(raw_bytes)
+
+    db = get_supabase_service_client()
+    existing = (
+        db.table("agent_knowledge_documents")
+        .select("id, file_size_bytes")
+        .eq("agent_id", str(agent_id))
+        .execute()
+    )
+    existing_rows = existing.data or []
+    if len(existing_rows) >= KNOWLEDGE_MAX_FILES_PER_AGENT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Maximum {KNOWLEDGE_MAX_FILES_PER_AGENT} knowledge documents per agent",
+        )
+
+    total_size = sum(row["file_size_bytes"] for row in existing_rows) + file_size_bytes
+    if total_size > KNOWLEDGE_MAX_TOTAL_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Total knowledge base size cannot exceed {KNOWLEDGE_MAX_TOTAL_BYTES // 1024} KB",
+        )
+
+    now = datetime.now(timezone.utc).isoformat()
+    insert_data = {
+        "agent_id": str(agent_id),
+        "filename": filename[:255],
+        "content_text": content_text,
+        "file_size_bytes": file_size_bytes,
+        "content_hash": content_hash,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    try:
+        result = db.table("agent_knowledge_documents").insert(insert_data).execute()
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "uq_agent_knowledge_documents_agent_hash" in error_msg or "duplicate" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This document already exists for this agent",
+            ) from e
+        logger.error("Failed to upload knowledge document for agent %s: %s", agent_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save knowledge document",
+        ) from e
+
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save knowledge document",
+        )
+
+    return {"document": _knowledge_doc_from_row(result.data[0])}
+
+
+def delete_knowledge_document(
+    agent_id: UUID,
+    doc_id: UUID,
+    supervisor_id: UUID,
+    *,
+    allowed_agent_type: AgentType | None = None,
+) -> None:
+    """Delete a knowledge document from an agent."""
+    agent = get_agent(agent_id, supervisor_id, allowed_agent_type=allowed_agent_type)
+    _ensure_agent_available_for_knowledge(agent)
+
+    db = get_supabase_service_client()
+    existing = (
+        db.table("agent_knowledge_documents")
+        .select("id")
+        .eq("id", str(doc_id))
+        .eq("agent_id", str(agent_id))
+        .limit(1)
+        .execute()
+    )
+    if not existing.data:
+        raise NotFoundException("Knowledge document not found")
+
+    db.table("agent_knowledge_documents").delete().eq("id", str(doc_id)).execute()
+
+
+def get_knowledge_text_for_agent(agent_id: UUID) -> str:
+    """Load and format all knowledge documents for prompt injection."""
+    db = get_supabase_service_client()
+    result = (
+        db.table("agent_knowledge_documents")
+        .select("filename, content_text, file_size_bytes, created_at")
+        .eq("agent_id", str(agent_id))
+        .order("created_at")
+        .execute()
+    )
+    rows = result.data or []
+    if not rows:
+        return ""
+
+    sections: list[str] = []
+    total_chars = 0
+    for row in rows:
+        section = f"## {row['filename']}\n{row['content_text']}"
+        section_len = len(section)
+        if total_chars + section_len > KNOWLEDGE_MAX_PROMPT_CHARS:
+            logger.warning(
+                "Knowledge base for agent %s truncated at %s chars (limit %s)",
+                agent_id,
+                total_chars,
+                KNOWLEDGE_MAX_PROMPT_CHARS,
+            )
+            break
+        sections.append(section)
+        total_chars += section_len + 2
+
+    return "\n\n".join(sections)
+
+
+def build_effective_system_prompt(base_prompt: str, knowledge_block: str) -> str:
+    """Combine base system prompt with knowledge base content."""
+    if not knowledge_block.strip():
+        return base_prompt
+    return (
+        f"{base_prompt.rstrip()}\n\n"
+        f"---\n"
+        f"# Knowledge Base\n"
+        f"Use the following reference material when answering. "
+        f"If the answer is not in the knowledge base, say so honestly.\n\n"
+        f"{knowledge_block.strip()}"
+    )
+
+
+def resolve_effective_system_prompt(base_prompt: str, agent_id: UUID) -> str:
+    """Build the full system prompt including knowledge base for an agent."""
+    knowledge_block = get_knowledge_text_for_agent(agent_id)
+    combined = build_effective_system_prompt(base_prompt, knowledge_block)
+    if len(combined) > KNOWLEDGE_MAX_PROMPT_CHARS:
+        logger.warning(
+            "Effective system prompt for agent %s exceeds %s chars — truncating",
+            agent_id,
+            KNOWLEDGE_MAX_PROMPT_CHARS,
+        )
+        return combined[:KNOWLEDGE_MAX_PROMPT_CHARS]
+    return combined
 

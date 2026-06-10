@@ -3,7 +3,7 @@
 from typing import Annotated, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 
 from app.api.v1.schemas.agent import (
     AgentCreateResponse,
@@ -13,6 +13,8 @@ from app.api.v1.schemas.agent import (
     AgentWhisperRequest,
     AgentWhisperResponse,
     CreateAgentRequest,
+    KnowledgeDocumentListResponse,
+    KnowledgeUploadResponse,
     UpdateAgentRequest,
 )
 from app.services.whisper_service import WhisperService
@@ -187,6 +189,67 @@ async def update_agent(
         logger.info(f"✅ Agent {agent_id} updated with Telegram token and webhook auto-configured")
     
     return response
+
+
+@router.get(
+    "/{agent_id}/knowledge",
+    response_model=KnowledgeDocumentListResponse,
+    summary="List knowledge base documents",
+    description="List markdown knowledge documents uploaded for an agent.",
+)
+async def list_knowledge_documents(
+    agent_id: UUID,
+    current_user: Annotated[UserResponse, Depends(get_current_user)],
+) -> KnowledgeDocumentListResponse:
+    """List knowledge base documents for an agent."""
+    data = agent_service.list_knowledge_documents(
+        agent_id=agent_id,
+        supervisor_id=current_user.id,
+        allowed_agent_type=agent_type_for_user(current_user),
+    )
+    return KnowledgeDocumentListResponse.model_validate(data)
+
+
+@router.post(
+    "/{agent_id}/knowledge",
+    response_model=KnowledgeUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload knowledge base document",
+    description="Upload a markdown file to the agent knowledge base.",
+)
+async def upload_knowledge_document(
+    agent_id: UUID,
+    current_user: Annotated[UserResponse, Depends(get_current_user)],
+    file: UploadFile = File(...),
+) -> KnowledgeUploadResponse:
+    """Upload a markdown knowledge document for an agent."""
+    data = await agent_service.upload_knowledge_document(
+        agent_id=agent_id,
+        file=file,
+        supervisor_id=current_user.id,
+        allowed_agent_type=agent_type_for_user(current_user),
+    )
+    return KnowledgeUploadResponse.model_validate(data)
+
+
+@router.delete(
+    "/{agent_id}/knowledge/{doc_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete knowledge base document",
+    description="Remove a markdown document from the agent knowledge base.",
+)
+async def delete_knowledge_document(
+    agent_id: UUID,
+    doc_id: UUID,
+    current_user: Annotated[UserResponse, Depends(get_current_user)],
+) -> None:
+    """Delete a knowledge document from an agent."""
+    agent_service.delete_knowledge_document(
+        agent_id=agent_id,
+        doc_id=doc_id,
+        supervisor_id=current_user.id,
+        allowed_agent_type=agent_type_for_user(current_user),
+    )
 
 
 @router.post(

@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Trash2, Upload } from 'lucide-react';
+import { toast } from 'react-toastify';
 import Icon from '../Icon';
 import { IconProp } from '@fortawesome/fontawesome-svg-core';
+import { agentsAPI, type KnowledgeDocument } from '@/services/agentsService';
 
 interface WebhookConfigs {
     telegram?: { enabled: boolean; bot_token?: string };
@@ -38,14 +40,27 @@ interface FormModalProps {
     showAgentTypeField?: boolean;
     showStatusField?: boolean;
     isEdit?: boolean;
+    knowledgeDocuments?: KnowledgeDocument[];
+    onKnowledgeChange?: () => void;
 }
+
+const MAX_KB_FILE_BYTES = 256 * 1024;
+
+const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
 
 const AgentFormModal: React.FC<FormModalProps> = ({
     open, title, formData, onChange, onSubmit, onClose, submitLabel, loading,
     existingAgentId, showAgentTypeField, showStatusField, isEdit,
+    knowledgeDocuments = [], onKnowledgeChange,
 }) => {
     const [animState, setAnimState] = useState<'entering' | 'exiting' | ''>('');
-    const [activeTab, setActiveTab] = useState<'basic' | 'telegram' | 'whatsapp' | 'instagram'>('basic');
+    const [activeTab, setActiveTab] = useState<'basic' | 'knowledge' | 'telegram' | 'whatsapp' | 'instagram'>('basic');
+    const [knowledgeBusy, setKnowledgeBusy] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (open) setAnimState('entering');
@@ -81,9 +96,58 @@ const AgentFormModal: React.FC<FormModalProps> = ({
         ? AGENT_STATUS_OPTIONS
         : AGENT_STATUS_OPTIONS.filter((o) => o.value === 'idle' || o.value === 'paused');
     const statusLocked = isEdit && (formData.status === 'in_call' || formData.status === 'in_chat');
+    const knowledgeLocked = statusLocked;
+
+    const getApiErrorMessage = (err: unknown, fallback: string): string => {
+        const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+        if (typeof detail === 'string' && detail.trim()) return detail;
+        return fallback;
+    };
+
+    const handleKnowledgeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file || !existingAgentId) return;
+
+        const ext = file.name.toLowerCase();
+        if (!ext.endsWith('.md') && !ext.endsWith('.markdown')) {
+            toast.warn('Only .md and .markdown files are allowed');
+            return;
+        }
+        if (file.size > MAX_KB_FILE_BYTES) {
+            toast.warn('File exceeds 256 KB limit');
+            return;
+        }
+
+        setKnowledgeBusy(true);
+        try {
+            await agentsAPI.uploadKnowledge(existingAgentId, file);
+            toast.success('Document uploaded');
+            onKnowledgeChange?.();
+        } catch (err: unknown) {
+            toast.error(getApiErrorMessage(err, 'Failed to upload document'));
+        } finally {
+            setKnowledgeBusy(false);
+        }
+    };
+
+    const handleKnowledgeDelete = async (docId: string) => {
+        if (!existingAgentId || knowledgeLocked) return;
+        setKnowledgeBusy(true);
+        try {
+            await agentsAPI.deleteKnowledge(existingAgentId, docId);
+            toast.success('Document removed');
+            onKnowledgeChange?.();
+        } catch (err: unknown) {
+            toast.error(getApiErrorMessage(err, 'Failed to delete document'));
+        } finally {
+            setKnowledgeBusy(false);
+        }
+    };
 
     const tabs = [
         { id: 'basic' as const, label: 'Basic', icon: 'file-lines' as IconProp, color: 'var(--text-muted)' },
+        { id: 'knowledge' as const, label: 'Knowledge', icon: 'book' as IconProp, color: '#8B5CF6' },
         ...(isChatAgent
             ? [
                 { id: 'telegram' as const, label: 'Telegram', icon: ['fab', 'telegram'] as IconProp, color: '#0088cc' },
@@ -212,6 +276,92 @@ const AgentFormModal: React.FC<FormModalProps> = ({
                                     }}
                                 />
                             </div>
+                        </>
+                    )}
+
+                    {/* Knowledge Base Tab */}
+                    {activeTab === 'knowledge' && (
+                        <>
+                            {!existingAgentId ? (
+                                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                    Save the agent first, then add knowledge base documents here.
+                                </p>
+                            ) : (
+                                <>
+                                    <p className="text-sm mb-2" style={{ color: 'var(--text-muted)' }}>
+                                        Upload markdown files (.md). Content is injected into the agent prompt when a new session starts.
+                                        Max 10 files, 256 KB each, 1 MB total.
+                                    </p>
+                                    {knowledgeLocked && (
+                                        <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+                                            Knowledge base cannot be changed while the agent is in an active session.
+                                        </p>
+                                    )}
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <input
+                                            ref={fileInputRef}
+                                            type="file"
+                                            accept=".md,.markdown,text/markdown"
+                                            className="hidden"
+                                            onChange={handleKnowledgeUpload}
+                                            disabled={knowledgeLocked || knowledgeBusy}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => fileInputRef.current?.click()}
+                                            disabled={knowledgeLocked || knowledgeBusy}
+                                            className="agent-config-btn agent-config-btn--save flex items-center gap-2"
+                                            style={{ opacity: knowledgeLocked || knowledgeBusy ? 0.5 : 1 }}
+                                        >
+                                            <Upload size={15} />
+                                            {knowledgeBusy ? 'Processing...' : 'Upload Markdown'}
+                                        </button>
+                                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                            {knowledgeDocuments.length} doc{knowledgeDocuments.length !== 1 ? 's' : ''}
+                                        </span>
+                                    </div>
+                                    {knowledgeDocuments.length === 0 ? (
+                                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                            No documents uploaded yet.
+                                        </p>
+                                    ) : (
+                                        <div className="flex flex-col gap-2">
+                                            {knowledgeDocuments.map((doc) => (
+                                                <div
+                                                    key={doc.id}
+                                                    className="flex items-center justify-between px-4 py-3 rounded-xl border"
+                                                    style={{
+                                                        backgroundColor: 'var(--bg-dark)',
+                                                        borderColor: 'var(--border)',
+                                                    }}
+                                                >
+                                                    <div>
+                                                        <p className="text-sm font-semibold" style={{ color: 'var(--text-main)' }}>
+                                                            {doc.filename}
+                                                        </p>
+                                                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                            {formatFileSize(doc.file_size_bytes)} · {new Date(doc.created_at).toLocaleDateString()}
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleKnowledgeDelete(doc.id)}
+                                                        disabled={knowledgeLocked || knowledgeBusy}
+                                                        className="p-2 rounded-lg transition-colors"
+                                                        style={{
+                                                            color: 'var(--text-muted)',
+                                                            opacity: knowledgeLocked || knowledgeBusy ? 0.4 : 1,
+                                                        }}
+                                                        title="Delete document"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </>
+                            )}
                         </>
                     )}
 

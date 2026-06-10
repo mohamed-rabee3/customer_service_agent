@@ -12,7 +12,7 @@ import AgentAvatar from '@/components/agents/AgentAvatar';
 
 import '@/components/agents/VoiceAgentSelector.css';
 
-import { agentsAPI, type WebhookConfigs } from '@/services/agentsService';
+import { agentsAPI, type KnowledgeDocument, type WebhookConfigs } from '@/services/agentsService';
 
 import { supervisorsAPI } from '@/services/supervisorsService';
 
@@ -434,11 +434,22 @@ const AgentConfiguration: React.FC = () => {
 
     const [formData, setFormData] = useState<AgentFormData>(defaultFormData());
 
+    const [knowledgeDocuments, setKnowledgeDocuments] = useState<KnowledgeDocument[]>([]);
+
     const agentToDeleteRef = useRef<string | null>(null);
 
 
 
     const resetForm = () => setFormData(defaultFormData(supervisorType));
+
+    const fetchKnowledgeDocuments = async (agentId: string) => {
+        try {
+            const res = await agentsAPI.listKnowledge(agentId);
+            setKnowledgeDocuments(res.data.documents || []);
+        } catch {
+            setKnowledgeDocuments([]);
+        }
+    };
 
 
 
@@ -506,15 +517,37 @@ const AgentConfiguration: React.FC = () => {
 
         try {
 
-            await agentsAPI.create(buildAgentPayload(formData, supervisorType));
+            const res = await agentsAPI.create(buildAgentPayload(formData, supervisorType));
 
             toast.success('Agent created successfully');
 
             setAddModalOpen(false);
 
-            resetForm();
+            await fetchAgents();
 
-            fetchAgents();
+            const created = res.data as { id: string; name: string; agent_type: Agent['agent_type']; status: Agent['status']; system_prompt?: string };
+
+            setSelectedAgent({
+                id: created.id,
+                name: created.name,
+                agent_type: created.agent_type ?? supervisorType,
+                system_prompt: formData.system_prompt,
+                status: created.status ?? 'idle',
+                mcp_tools: {},
+                webhook_configs: formData.webhook_configs || {},
+            });
+
+            setFormData({
+                name: created.name,
+                system_prompt: formData.system_prompt,
+                agent_type: created.agent_type ?? supervisorType,
+                status: created.status ?? 'idle',
+                webhook_configs: formData.webhook_configs || {},
+            });
+
+            await fetchKnowledgeDocuments(created.id);
+
+            setEditModalOpen(true);
 
         } catch (err: unknown) {
 
@@ -592,6 +625,8 @@ const AgentConfiguration: React.FC = () => {
 
         }
 
+        await fetchKnowledgeDocuments(agent.id);
+
         setEditModalOpen(true);
 
     };
@@ -617,6 +652,8 @@ const AgentConfiguration: React.FC = () => {
             setEditModalOpen(false);
 
             setSelectedAgent(null);
+
+            setKnowledgeDocuments([]);
 
             resetForm();
 
@@ -791,13 +828,17 @@ const AgentConfiguration: React.FC = () => {
 
                 onSubmit={handleEditSubmit}
 
-                onClose={() => { setEditModalOpen(false); setSelectedAgent(null); }}
+                onClose={() => { setEditModalOpen(false); setSelectedAgent(null); setKnowledgeDocuments([]); }}
 
                 submitLabel="Save Changes"
 
                 isEdit
 
                 existingAgentId={selectedAgent?.id}
+
+                knowledgeDocuments={knowledgeDocuments}
+
+                onKnowledgeChange={() => selectedAgent && fetchKnowledgeDocuments(selectedAgent.id)}
 
             />
 

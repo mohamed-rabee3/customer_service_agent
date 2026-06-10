@@ -16,6 +16,7 @@ from app.api.v1.schemas.webhooks import TelegramUpdate
 from app.core.constants import AgentStatus, InteractionStatus, InteractionType
 from app.core.config import settings
 from app.db.supabase import get_supabase_client, get_supabase_service_client
+from app.services.agent_service import resolve_effective_system_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,8 @@ async def telegram_webhook(
         logger.error(f"Agent {agent_id} does not have a telegram bot token configured.")
         return {"status": "ignored", "reason": "agent_telegram_not_configured"}
 
+    effective_prompt = resolve_effective_system_prompt(agent["system_prompt"], agent_id)
+
     # 3. Check for an active session with this Telegram Chat ID
     session_result = (
         db.table("interactions")
@@ -120,7 +123,7 @@ async def telegram_webhook(
              chat_agent = await ChatSessionManager.start_session(
                  agent_id=agent_id,
                  interaction_id=interaction_id,
-                 system_prompt=agent["system_prompt"],
+                 system_prompt=effective_prompt,
                  agent_name=agent["name"],
              )
              # Restore history from DB
@@ -163,7 +166,7 @@ async def telegram_webhook(
         chat_agent = await ChatSessionManager.start_session(
              agent_id=agent_id,
              interaction_id=interaction_id,
-             system_prompt=agent["system_prompt"],
+             system_prompt=effective_prompt,
              agent_name=agent["name"],
         )
 
