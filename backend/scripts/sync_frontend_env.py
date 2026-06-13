@@ -17,9 +17,10 @@ def main() -> None:
 
     webhook_domain = (backend_env.get("WEBHOOK_DOMAIN") or "").strip().rstrip("/")
     api_base = f"{webhook_domain}/v1" if webhook_domain else "http://localhost:8000/v1"
+    supabase_url = (backend_env.get("SUPABASE_URL") or "").strip().rstrip("/")
 
     lines = [
-        f"VITE_SUPABASE_URL={backend_env['SUPABASE_URL']}",
+        f"VITE_SUPABASE_URL={supabase_url}",
         f"VITE_SUPABASE_ANON_KEY={backend_env['SUPABASE_KEY']}",
         f"VITE_API_BASE_URL={api_base}",
         "",

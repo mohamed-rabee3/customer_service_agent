@@ -32,9 +32,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [userId, setUserId] = useState<string | null>(null);
 
   // Fetch user profile from backend
-  const fetchProfile = async (): Promise<{ ok: boolean; error?: string }> => {
+  const fetchProfile = async (accessToken?: string): Promise<{ ok: boolean; error?: string }> => {
     try {
-      const res = await api.get('/auth/me');
+      const config = accessToken
+        ? { headers: { Authorization: `Bearer ${accessToken}` } }
+        : undefined;
+      const res = await api.get('/auth/me', config);
       // The backend returns { id, role, email, profile: { supervisor_type, ... } }
       const data = res.data;
       setRole(data.role);
@@ -54,7 +57,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (typeof detail === 'string' && detail.trim()) {
         message = detail;
       } else if (!axiosErr.response) {
-        message = `Cannot reach the API server. Check that the backend is running (${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/v1'}).`;
+        const hint =
+          axiosErr.code === 'ECONNABORTED'
+            ? 'Request timed out.'
+            : axiosErr.message || 'Network error (check CORS / Cloudflare / API reachability).';
+        message = `Cannot reach the API server. ${hint} (${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/v1'})`;
       }
       return { ok: false, error: message };
     }
@@ -119,9 +126,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const login = async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) return { success: false, error: error.message };
-      const profile = await fetchProfile();
+      const profile = await fetchProfile(data.session?.access_token);
       if (!profile.ok) {
         await supabase.auth.signOut();
         return { success: false, error: profile.error || 'Failed to load profile.' };

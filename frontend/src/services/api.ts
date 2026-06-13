@@ -2,11 +2,11 @@
 import axios from 'axios';
 import { supabase } from '../lib/supabase';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/v1';
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/v1').replace(/\/$/, '');
 
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 15000,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -14,9 +14,16 @@ const api = axios.create({
 
 // Attach the Supabase JWT to every request
 api.interceptors.request.use(async (config) => {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (session?.access_token) {
-    config.headers.Authorization = `Bearer ${session.access_token}`;
+  if (config.headers.Authorization) {
+    return config;
+  }
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      config.headers.Authorization = `Bearer ${session.access_token}`;
+    }
+  } catch {
+    // Proceed without token; backend will return 401 with a clear message.
   }
   return config;
 });
