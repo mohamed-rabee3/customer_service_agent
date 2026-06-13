@@ -54,7 +54,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (typeof detail === 'string' && detail.trim()) {
         message = detail;
       } else if (!axiosErr.response) {
-        message = 'Cannot reach the API server. Make sure the backend is running on http://localhost:8000.';
+        message = `Cannot reach the API server. Check that the backend is running (${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/v1'}).`;
       }
       return { ok: false, error: message };
     }

@@ -152,6 +152,12 @@ def _vertex_accessible() -> bool:
         return True
     except Exception as e:
         err = str(e)
+        if "429" in err or "RESOURCE_EXHAUSTED" in err:
+            logger.warning(
+                "Vertex AI rate-limited (429) during health check — "
+                "credentials look valid; starting worker anyway."
+            )
+            return True
         if "valid type" in err or "service_account" in err:
             logger.error("%s Details: %s", _OAUTH_CLIENT_SECRET_HELP, err[:300])
         elif "NOT_FOUND" in err and "Publisher Model" in err:
@@ -189,6 +195,7 @@ def _build_realtime_model() -> google_realtime.RealtimeModel:
     common = dict(
         model=settings.gemini_realtime_model,
         voice=settings.gemini_voice,
+        language=settings.gemini_language,
         temperature=0.6,
         input_audio_transcription=transcription,
         output_audio_transcription=transcription,
@@ -232,11 +239,6 @@ def _build_agent_session() -> AgentSession:
             turn_detection=MultilingualModel(),
         )
 
-    if settings.gemini_use_vertex and not _vertex_accessible():
-        raise RuntimeError(_VERTEX_SETUP_HELP)
-    if not settings.gemini_use_vertex and not _ai_studio_accessible():
-        raise RuntimeError("GEMINI_API_KEY invalid or blocked.")
-
     backend = "Vertex AI" if settings.gemini_use_vertex else "AI Studio"
     logger.info(
         "Voice pipeline: gemini realtime (%s, model=%s)",
@@ -252,7 +254,13 @@ _skip_startup_checks = os.environ.get("VOICE_SKIP_STARTUP_CHECKS", "").lower() i
     "yes",
 )
 
-if not _skip_startup_checks and not _use_legacy_voice_pipeline():
+
+def _run_startup_checks(*, main_process: bool = False) -> None:
+    """Validate AI credentials once in the main worker — not in per-job subprocesses."""
+    if not main_process and _skip_startup_checks:
+        return
+    if _use_legacy_voice_pipeline():
+        return
     if settings.gemini_use_vertex:
         creds_err = _validate_vertex_credentials_file()
         if creds_err:
@@ -267,6 +275,7 @@ if not _skip_startup_checks and not _use_legacy_voice_pipeline():
         )
     elif not _ai_studio_accessible():
         raise SystemExit("GEMINI_API_KEY invalid. Set GEMINI_USE_VERTEX=true for GCP billing.")
+
 
 # Health check HTTP server (used by Docker/orchestrators). Host port 8083 in production compose.
 _agent_health_port = int(os.environ.get("AGENT_HEALTH_PORT", "8083"))
@@ -307,10 +316,18 @@ async def entrypoint(ctx: agents.JobContext):
     logger.info(f"Agent metadata parsed: keys={list(room_metadata.keys())}")
 
     agent_db_id = room_metadata.get("agent_db_id", "unknown")
+    agent_name_meta = room_metadata.get("agent_name", "")
     interaction_type = room_metadata.get("interaction_type", "voice")
     system_prompt = room_metadata.get(
         "system_prompt",
         "You are a helpful customer service agent. Be polite, concise, and helpful.",
+    )
+    logger.info(
+        "Voice agent %s (%s): system_prompt length=%d, preview=%r",
+        agent_db_id,
+        agent_name_meta or "unknown",
+        len(system_prompt),
+        system_prompt[:240],
     )
 
     # interaction_id: DB row for this room is authoritative (call_source_id == room).
@@ -563,10 +580,13 @@ async def entrypoint(ctx: agents.JobContext):
 
     logger.info(f"Agent session started for agent {agent_db_id} in room {ctx.room.name}")
 
-    # Generate initial greeting
+    # Generate initial greeting — must follow the configured persona, not a generic script.
     await session.generate_reply(
-        instructions="Greet the customer warmly and ask how you can help them today. "
-        "Be friendly and professional."
+        instructions=(
+            "Greet the customer following your system instructions and persona exactly. "
+            f"Speak in {settings.gemini_language} unless the customer clearly uses another language. "
+            "Ask how you can help them today."
+        )
     )
 
 
@@ -807,4 +827,5 @@ async def _handle_post_call(
 
 
 if __name__ == "__main__":
+    _run_startup_checks(main_process=True)
     agents.cli.run_app(server)

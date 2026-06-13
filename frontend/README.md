@@ -12,9 +12,27 @@ cp .env.example .env
 npm run dev
 ```
 
-The dev server runs at `http://localhost:8080`.
+## Deploy to Vercel
 
-## Scripts
+1. Import the repo in [Vercel](https://vercel.com/new).
+2. Set **Root Directory** to `frontend`.
+3. Framework preset: **Vite** (build: `npm run build`, output: `dist`).
+4. Add **Environment Variables** (Production + Preview):
+
+| Name | Value |
+|------|-------|
+| `VITE_API_BASE_URL` | `https://omni-backend.mohamed-rabiee.tech/v1` |
+| `VITE_SUPABASE_URL` | your Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | your Supabase anon key |
+
+5. Deploy. After the first deploy, add your Vercel URL to **Supabase → Authentication → URL Configuration → Redirect URLs** (e.g. `https://your-app.vercel.app/**`).
+
+Local values can be synced from `backend/.env`:
+
+```sh
+python backend/scripts/sync_frontend_env.py
+```
+
 
 - `npm run dev` — start Vite dev server
 - `npm run build` — production build

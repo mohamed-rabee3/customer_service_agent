@@ -15,10 +15,13 @@ def main() -> None:
     if missing:
         raise SystemExit(f"Missing in backend/.env: {', '.join(missing)}")
 
+    webhook_domain = (backend_env.get("WEBHOOK_DOMAIN") or "").strip().rstrip("/")
+    api_base = f"{webhook_domain}/v1" if webhook_domain else "http://localhost:8000/v1"
+
     lines = [
         f"VITE_SUPABASE_URL={backend_env['SUPABASE_URL']}",
         f"VITE_SUPABASE_ANON_KEY={backend_env['SUPABASE_KEY']}",
-        "VITE_API_BASE_URL=http://localhost:8000/v1",
+        f"VITE_API_BASE_URL={api_base}",
         "",
     ]
     frontend_env_path.write_text("\n".join(lines), encoding="utf-8")

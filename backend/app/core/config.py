@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     # Lightweight model for Vertex startup health check (not used for voice calls)
     gemini_vertex_healthcheck_model: str = "gemini-2.5-flash"
     gemini_voice: str = "Aoede"
+    # BCP-47 code for Gemini Live API (e.g. en-US). Prevents auto-detect switching to Arabic.
+    gemini_language: str = "en-US"
     # Legacy AI Studio key (only if gemini_use_vertex=false)
     gemini_api_key: str = ""
     # Voice worker: "gemini" = native-audio Live API; "legacy" = Groq STT/LLM + ElevenLabs TTS

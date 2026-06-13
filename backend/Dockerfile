@@ -37,7 +37,7 @@ RUN VOICE_SKIP_STARTUP_CHECKS=1 \
     python -m app.agents.voice_session_manager download-files \
     || echo "WARN: download-files failed; voice-agent will fetch models on first start"
 
-EXPOSE 8082 8083
+EXPOSE 8000 8083
 
-# Default: FastAPI API on 8082 (override in compose for voice worker)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8082", "--workers", "1"]
+# Default: FastAPI API on 8000 (override in compose for voice worker)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

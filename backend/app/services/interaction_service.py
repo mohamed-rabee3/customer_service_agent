@@ -130,6 +130,7 @@ class InteractionService:
         )
         room_metadata = {
             "agent_db_id": str(agent.id),
+            "agent_name": agent.name,
             "system_prompt": effective_prompt,
             "interaction_type": interaction_type.value,
             "mcp_tools": agent.mcp_tools,
