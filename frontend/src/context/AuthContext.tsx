@@ -32,7 +32,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [userId, setUserId] = useState<string | null>(null);
 
   // Fetch user profile from backend
-  const fetchProfile = async (accessToken?: string): Promise<{ ok: boolean; error?: string }> => {
+  const fetchProfile = async (
+    accessToken?: string,
+  ): Promise<{ ok: boolean; error?: string; networkError?: boolean }> => {
     try {
       const config = accessToken
         ? { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -63,8 +65,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             : axiosErr.message || 'Network error (check CORS / Cloudflare / API reachability).';
         message = `Cannot reach the API server. ${hint} (${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/v1'})`;
       }
-      return { ok: false, error: message };
+      return { ok: false, error: message, networkError: !axiosErr.response };
     }
+  };
+
+  const clearLocalSession = async () => {
+    try {
+      // Local-only: avoids a network call to Supabase when connectivity is broken.
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch {
+      // Clear storage even if Supabase client throws.
+    }
+    localStorage.clear();
+    sessionStorage.clear();
+    setIsLoggedIn(false);
+    setUserId(null);
+    setRole('supervisor');
+    setSupervisorType('voice');
   };
 
   // Check existing session on mount
@@ -76,8 +93,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const { data: { session } } = await supabase.auth.getSession();
         if (session && !resolved) {
           const profile = await fetchProfile();
-          if (!profile.ok) {
-            await supabase.auth.signOut();
+          if (!profile.ok && !profile.networkError) {
+            await clearLocalSession();
           }
         }
       } catch {
@@ -130,7 +147,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (error) return { success: false, error: error.message };
       const profile = await fetchProfile(data.session?.access_token);
       if (!profile.ok) {
-        await supabase.auth.signOut();
+        if (!profile.networkError) {
+          await clearLocalSession();
+        }
         return { success: false, error: profile.error || 'Failed to load profile.' };
       }
       return { success: true };
@@ -140,7 +159,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut({ scope: 'global' });
+    } catch {
+      await supabase.auth.signOut({ scope: 'local' });
+    }
     localStorage.clear();
     sessionStorage.clear();
     setIsLoggedIn(false);
